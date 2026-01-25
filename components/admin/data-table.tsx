@@ -164,10 +164,9 @@ export function DataTable<TData, TValue>({
                         ))}
                     </div>
                     <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="bg-transparent border-border">
-                                {t("common.filter")} <IconChevronDown className="ms-2 h-4 w-4" />
-                            </Button>
+                        <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-border bg-transparent px-2.5 py-2 text-sm font-medium transition-all hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 h-8 gap-1.5">
+                            <span>{t("common.filter")}</span>
+                            <IconChevronDown className="h-4 w-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             {table
@@ -323,11 +322,9 @@ export function ActionsCell({
 
     return (
         <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                    <span className="sr-only">{t("common.actions")}</span>
-                    <IconDots className="h-4 w-4" />
-                </Button>
+            <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-1.5 py-1 text-sm font-medium transition-all hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 h-8 w-8 p-0">
+                <span className="sr-only">{t("common.actions")}</span>
+                <IconDots className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
                 <DropdownMenuLabel>{t("common.actions")}</DropdownMenuLabel>
@@ -360,7 +357,10 @@ export function SortableHeader({
     column,
     title,
 }: {
-    column: any
+    column: {
+        toggleSorting: (desc?: boolean) => void
+        getIsSorted: () => false | "asc" | "desc"
+    }
     title: string
 }) {
     return (
