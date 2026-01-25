@@ -15,9 +15,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { Save, Globe, Bell, Shield, Database, Palette, Sun, Moon, Monitor } from "@tabler/icons-react"
+import { IconDeviceFloppy, IconGlobe, IconBell, IconShield, IconDatabase, IconPalette, IconSun, IconMoon, IconHeartRateMonitor } from "@tabler/icons-react"
 import { useLocale } from "@/lib/locale-context"
-import { useTheme, Theme } from "@/lib/theme-context"
+import { useTheme } from "next-themes"
 
 export default function SettingsPage() {
     const { t, locale, setLocale } = useLocale()
@@ -53,7 +53,7 @@ export default function SettingsPage() {
                         <p className="text-muted-foreground">{t("settings.subtitle")}</p>
                     </div>
                     <Button onClick={handleSave} className="bg-primary text-primary-foreground">
-                        <Save className="me-2 h-4 w-4" />
+                        <IconDeviceFloppy className="me-2 h-4 w-4" />
                         {t("common.save")}
                     </Button>
                 </div>
@@ -64,7 +64,7 @@ export default function SettingsPage() {
                         <CardHeader>
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-1/10">
-                                    <Globe className="h-5 w-5 text-chart-1" />
+                                    <IconGlobe className="h-5 w-5 text-chart-1" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-foreground">{t("settings.language")}</CardTitle>
@@ -94,7 +94,7 @@ export default function SettingsPage() {
                                 <Label className="text-foreground">{t("settings.language")}</Label>
                                 <Select
                                     value={locale}
-                                    onValueChange={(value: "en" | "ar") => setLocale(value)}
+                                    onValueChange={(value: "en" | "ar" | null) => setLocale(value as "en" | "ar")}
                                 >
                                     <SelectTrigger className="bg-secondary border-0">
                                         <SelectValue />
@@ -119,7 +119,7 @@ export default function SettingsPage() {
                         <CardHeader>
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-5/10">
-                                    <Palette className="h-5 w-5 text-chart-5" />
+                                    <IconPalette className="h-5 w-5 text-chart-5" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-foreground">{t("settings.appearance")}</CardTitle>
@@ -139,7 +139,7 @@ export default function SettingsPage() {
                                             }`}
                                         onClick={() => setTheme("light")}
                                     >
-                                        <Sun className="h-5 w-5" />
+                                        <IconSun className="h-5 w-5" />
                                         <span className="text-xs">{t("settings.light")}</span>
                                     </Button>
                                     <Button
@@ -150,7 +150,7 @@ export default function SettingsPage() {
                                             }`}
                                         onClick={() => setTheme("dark")}
                                     >
-                                        <Moon className="h-5 w-5" />
+                                        <IconMoon className="h-5 w-5" />
                                         <span className="text-xs">{t("settings.dark")}</span>
                                     </Button>
                                     <Button
@@ -161,7 +161,7 @@ export default function SettingsPage() {
                                             }`}
                                         onClick={() => setTheme("system")}
                                     >
-                                        <Monitor className="h-5 w-5" />
+                                        <IconHeartRateMonitor className="h-5 w-5" />
                                         <span className="text-xs">{t("settings.system")}</span>
                                     </Button>
                                 </div>
@@ -174,7 +174,7 @@ export default function SettingsPage() {
                         <CardHeader>
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-2/10">
-                                    <Bell className="h-5 w-5 text-chart-2" />
+                                    <IconBell className="h-5 w-5 text-chart-2" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-foreground">{t("settings.notifications")}</CardTitle>
@@ -233,7 +233,7 @@ export default function SettingsPage() {
                         <CardHeader>
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-3/10">
-                                    <Shield className="h-5 w-5 text-chart-3" />
+                                    <IconShield className="h-5 w-5 text-chart-3" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-foreground">{t("settings.security")}</CardTitle>
@@ -262,7 +262,7 @@ export default function SettingsPage() {
                                 </Label>
                                 <Select
                                     value={settings.sessionTimeout}
-                                    onValueChange={(value) => setSettings({ ...settings, sessionTimeout: value })}
+                                    onValueChange={(value: string | null) => setSettings({ ...settings, sessionTimeout: value as string })}
                                 >
                                     <SelectTrigger className="bg-secondary border-0">
                                         <SelectValue />
@@ -283,7 +283,7 @@ export default function SettingsPage() {
                         <CardHeader>
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-4/10">
-                                    <Database className="h-5 w-5 text-chart-4" />
+                                    <IconDatabase className="h-5 w-5 text-chart-4" />
                                 </div>
                                 <div>
                                     <CardTitle className="text-foreground">{t("settings.backup")}</CardTitle>
@@ -313,7 +313,7 @@ export default function SettingsPage() {
                                     </Label>
                                     <Select
                                         value={settings.backupFrequency}
-                                        onValueChange={(value) => setSettings({ ...settings, backupFrequency: value })}
+                                        onValueChange={(value: string | null) => setSettings({ ...settings, backupFrequency: value as string })}
                                     >
                                         <SelectTrigger className="bg-secondary border-0">
                                             <SelectValue />
