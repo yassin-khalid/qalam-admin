@@ -11,6 +11,10 @@
   "dependencies": {
     "@base-ui/react": "^1.1.0",
     "@tabler/icons-react": "^3.36.1",
+    "@tanstack/db": "^0.5.23",
+    "@tanstack/query-core": "^5.90.20",
+    "@tanstack/query-db-collection": "^1.0.20",
+    "@tanstack/react-db": "^0.1.67",
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

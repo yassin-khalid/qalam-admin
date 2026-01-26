@@ -8,83 +8,86 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { useLocale } from "@/lib/locale-context"
+import { count, eq, liveQueryCollectionOptions, useLiveQuery } from "@tanstack/react-db"
+import { domainCollection, domainWithCurriculumsCount } from "@/collections/domain"
+import { curriculumCollection } from "@/collections/curriculums"
 
 interface Domain {
-    id: string
+    id: number,
     name: string
     nameAr: string
     description?: string
     descriptionAr?: string
     active: boolean
-    order: number
+    // order: number
     curriculumsCount: number
     createdAt: string
 }
 
 const mockDomains: Domain[] = [
     {
-        id: "1",
+        id: 1,
         name: "Science & Technology",
         nameAr: "العلوم والتكنولوجيا",
         description: "All science and technology related subjects",
         descriptionAr: "جميع المواد المتعلقة بالعلوم والتكنولوجيا",
         active: true,
-        order: 1,
+        // order: 1,
         curriculumsCount: 5,
         createdAt: "2024-01-15",
     },
     {
-        id: "2",
+        id: 2,
         name: "Humanities",
         nameAr: "العلوم الإنسانية",
         description: "Arts, history, philosophy, and social sciences",
         descriptionAr: "الفنون والتاريخ والفلسفة والعلوم الاجتماعية",
         active: true,
-        order: 2,
+        // order: 2,
         curriculumsCount: 3,
         createdAt: "2024-01-10",
     },
     {
-        id: "3",
+        id: 3,
         name: "Languages",
         nameAr: "اللغات",
         description: "Arabic, English, and foreign languages",
         descriptionAr: "العربية والإنجليزية واللغات الأجنبية",
         active: true,
-        order: 3,
+        // order: 3,
         curriculumsCount: 4,
         createdAt: "2024-01-08",
     },
     {
-        id: "4",
+        id: 4,
         name: "Mathematics",
         nameAr: "الرياضيات",
         description: "Pure and applied mathematics",
         descriptionAr: "الرياضيات البحتة والتطبيقية",
         active: true,
-        order: 4,
+        // order: 4,
         curriculumsCount: 2,
         createdAt: "2024-01-05",
     },
     {
-        id: "5",
+        id: 5,
         name: "Physical Education",
         nameAr: "التربية البدنية",
         description: "Sports and physical activities",
         descriptionAr: "الرياضة والأنشطة البدنية",
         active: false,
-        order: 5,
+        // order: 5,
         curriculumsCount: 1,
         createdAt: "2024-01-03",
     },
     {
-        id: "6",
+        id: 6,
         name: "Arts & Design",
         nameAr: "الفنون والتصميم",
         description: "Visual arts, music, and creative design",
         descriptionAr: "الفنون البصرية والموسيقى والتصميم الإبداعي",
         active: true,
-        order: 6,
+        // order: 6,
         curriculumsCount: 2,
         createdAt: "2024-01-01",
     },
@@ -93,11 +96,41 @@ const mockDomains: Domain[] = [
 export default function DomainsPage() {
     const router = useRouter()
     const { t, locale } = useLocale()
-    const [domains, setDomains] = React.useState(mockDomains)
+    // const [domains, setDomains] = React.useState(mockDomains)
     const [deleteDialog, setDeleteDialog] = React.useState<{ open: boolean; domain: Domain | null }>({
         open: false,
         domain: null,
     })
+
+    // const { data: domains } = useLiveQuery(q => q.from({ domains: domainCollection })
+    //     .join({ curriculums: curriculumCollection }, ({ curriculums, domains }) => eq(domains.id, curriculums.id), 'left')
+    //     .orderBy(({ domains }) => domains.id)
+    //     .where(({ curriculums }) => eq(curriculums?.isActive, true))
+    //     .groupBy(({ domains }) => [
+    //         domains.id,
+    //         domains.nameEn,
+    //         domains.nameAr,
+    //         domains.descriptionEn,
+    //         domains.descriptionAr,
+    //         domains.createdAt,
+    //         domains.id,
+    //         true,
+
+    //     ])
+    //     .select(({ curriculums, domains }) => ({
+    //         id: domains.id,
+    //         name: domains.nameEn,
+    //         nameAr: domains.nameAr,
+    //         description: domains.descriptionAr,
+    //         descriptionAr: domains.descriptionAr,
+    //         createdAt: domains.createdAt,
+    //         order: domains.id,
+    //         active: true,
+    //         curriculumsCount: count(curriculums?.id ?? 0),
+    //     })))
+
+    // console.log({ domains })
+    const { data: domains } = useLiveQuery(domainWithCurriculumsCount)
 
     const columns: ColumnDef<Domain>[] = [
         {
@@ -105,7 +138,7 @@ export default function DomainsPage() {
             header: ({ column }) => <SortableHeader column={column} title={t("common.order")} />,
             cell: ({ row }) => (
                 <div className="flex h-8 w-8 items-center justify-center rounded bg-secondary text-sm font-medium text-foreground">
-                    {row.original.order}
+                    {row.original.id}
                 </div>
             ),
         },
@@ -157,11 +190,11 @@ export default function DomainsPage() {
                     onEdit={() => router.push(`/domains/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, domain: row.original })}
                     onToggleStatus={() => {
-                        setDomains((prev) =>
-                            prev.map((d) =>
-                                d.id === row.original.id ? { ...d, active: !d.active } : d
-                            )
-                        )
+                        // setDomains((prev) =>
+                        //     prev.map((d) =>
+                        //         d.id === row.original.id ? { ...d, active: !d.active } : d
+                        //     )
+                        // )
                     }}
                     isActive={row.original.active}
                 />
@@ -171,7 +204,7 @@ export default function DomainsPage() {
 
     const handleDelete = async () => {
         if (deleteDialog.domain) {
-            setDomains((prev) => prev.filter((d) => d.id !== deleteDialog.domain!.id))
+            // setDomains((prev) => prev.filter((d) => d.id !== deleteDialog.domain!.id))
         }
     }
 
