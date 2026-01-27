@@ -1,7 +1,8 @@
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
-import { createCollection } from "@tanstack/react-db";
+import { count, createCollection, createLiveQueryCollection, eq } from "@tanstack/react-db";
 import { ApiResponse, PaginatedResult } from "@/types/ApiResponse";
 import { queryClient } from "@/lib/utils";
+import { levelCollection } from "./levels";
 
 export type EducationCurriculumItem = {
     id: number;
@@ -35,3 +36,22 @@ export const curriculumCollection = createCollection(queryCollectionOptions({
 }))
 
 
+export const curriculumWithLevelsCount = createLiveQueryCollection({
+    query: q => {
+        const levelsCount = q.from({levels: levelCollection})
+        .groupBy(({levels}) => levels.curriculumId)
+        .select(({levels}) => ({
+            curriculumId: levels.curriculumId,
+            count: count(levels?.id ?? 0),
+        }))
+
+        const curriculums = q.from({curriculums: curriculumCollection})
+        .join({levelsCount: levelsCount}, ({curriculums, levelsCount}) => eq(curriculums.id, levelsCount.curriculumId))
+        .select(({curriculums, levelsCount}) => ({
+            ...curriculums,
+            levelsCount: levelsCount?.count ?? 0,
+        }))
+
+        return q.from({curriculums})
+    }
+})

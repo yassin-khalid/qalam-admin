@@ -8,13 +8,17 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { Badge } from "@/components/ui/badge"
+import { curriculumCollection, curriculumWithLevelsCount } from "@/collections/curriculums"
+import { eq, useLiveQuery } from "@tanstack/react-db"
+import { domainCollection } from "@/collections/domain"
+import { useLocale } from "@/lib/locale-context"
 
 interface Curriculum {
-    id: string
-    name: string
+    id: number
+    nameEn: string
     nameAr: string
     domain: string
-    domainId: string
+    domainId: number
     active: boolean
     order: number
     levelsCount: number
@@ -23,44 +27,44 @@ interface Curriculum {
 
 const mockCurriculums: Curriculum[] = [
     {
-        id: "1",
-        name: "National Curriculum 2024",
+        id: 1,
+        nameEn: "National Curriculum 2024",
         nameAr: "المنهج الوطني 2024",
         domain: "Science & Technology",
-        domainId: "1",
+        domainId: 1,
         active: true,
         order: 1,
         levelsCount: 4,
         createdAt: "2024-01-15",
     },
     {
-        id: "2",
-        name: "International Baccalaureate",
+        id: 2,
+        nameEn: "International Baccalaureate",
         nameAr: "البكالوريا الدولية",
         domain: "Science & Technology",
-        domainId: "1",
+        domainId: 1,
         active: true,
         order: 2,
         levelsCount: 3,
         createdAt: "2024-01-12",
     },
     {
-        id: "3",
-        name: "Advanced Placement",
+        id: 3,
+        nameEn: "Advanced Placement",
         nameAr: "التنسيب المتقدم",
         domain: "Mathematics",
-        domainId: "4",
+        domainId: 4,
         active: false,
         order: 3,
         levelsCount: 2,
         createdAt: "2024-01-10",
     },
     {
-        id: "4",
-        name: "Cambridge IGCSE",
+        id: 4,
+        nameEn: "Cambridge IGCSE",
         nameAr: "كامبريدج IGCSE",
         domain: "Languages",
-        domainId: "3",
+        domainId: 3,
         active: true,
         order: 4,
         levelsCount: 5,
@@ -70,11 +74,25 @@ const mockCurriculums: Curriculum[] = [
 
 export default function CurriculumsPage() {
     const router = useRouter()
-    const [curriculums, setCurriculums] = React.useState(mockCurriculums)
+    // const [curriculums, setCurriculums] = React.useState(mockCurriculums)
     const [deleteDialog, setDeleteDialog] = React.useState<{ open: boolean; item: Curriculum | null }>({
         open: false,
         item: null,
     })
+    const { locale } = useLocale()
+
+    const { data: curriculums } = useLiveQuery(q => q.from({ curriculums: curriculumWithLevelsCount })
+        .join({ domains: domainCollection }, ({ curriculums, domains }) => eq(curriculums.domainId, domains.id))
+        .select(({ curriculums, domains }) => ({
+            ...curriculums,
+            domain: locale === 'ar' ? domains?.nameAr ?? '' : domains?.nameEn ?? '',
+            domainId: domains?.id ?? 0,
+            active: curriculums.isActive,
+            order: curriculums.id,
+            levelsCount: curriculums.levelsCount,
+        })), [locale]
+    )
+    const { data: domains } = useLiveQuery(q => q.from({ domains: domainCollection }))
 
     const columns: ColumnDef<Curriculum>[] = [
         {
@@ -87,11 +105,11 @@ export default function CurriculumsPage() {
             ),
         },
         {
-            accessorKey: "name",
+            accessorKey: "nameEn",
             header: ({ column }) => <SortableHeader column={column} title="Name (EN)" />,
             cell: ({ row }) => (
                 <div>
-                    <p className="font-medium text-foreground">{row.original.name}</p>
+                    <p className="font-medium text-foreground">{row.original.nameEn}</p>
                 </div>
             ),
         },
@@ -131,11 +149,11 @@ export default function CurriculumsPage() {
                     onEdit={() => router.push(`/curriculums/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, item: row.original })}
                     onToggleStatus={() => {
-                        setCurriculums((prev) =>
-                            prev.map((c) =>
-                                c.id === row.original.id ? { ...c, active: !c.active } : c
-                            )
-                        )
+                        // setCurriculums((prev) =>
+                        //     prev.map((c) =>
+                        //         c.id === row.original.id ? { ...c, active: !c.active } : c
+                        //     )
+                        // )
                     }}
                     isActive={row.original.active}
                 />
@@ -144,9 +162,9 @@ export default function CurriculumsPage() {
     ]
 
     const handleDelete = async () => {
-        if (deleteDialog.item) {
-            setCurriculums((prev) => prev.filter((c) => c.id !== deleteDialog.item!.id))
-        }
+        // if (deleteDialog.item) {
+        //     setCurriculums((prev) => prev.filter((c) => c.id !== deleteDialog.item!.id))
+        // }
     }
 
     return (
@@ -160,16 +178,17 @@ export default function CurriculumsPage() {
                 columns={columns}
                 data={curriculums}
                 title="Curriculums"
-                searchKey="name"
+                searchKey={locale === 'ar' ? 'nameAr' : 'nameEn'}
                 searchPlaceholder="Search curriculums..."
                 filters={[
                     {
                         key: "domain",
                         label: "Domain",
                         options: [
-                            { value: "Science & Technology", label: "Science & Technology" },
-                            { value: "Mathematics", label: "Mathematics" },
-                            { value: "Languages", label: "Languages" },
+                            // { value: "Science & Technology", label: "Science & Technology" },
+                            // { value: "Mathematics", label: "Mathematics" },
+                            // { value: "Languages", label: "Languages" },
+                            ...domains?.map((domain) => ({ value: locale === 'ar' ? domain.nameAr : domain.nameEn, label: locale === 'ar' ? domain.nameAr : domain.nameEn })),
                         ],
                     },
                 ]}
@@ -181,7 +200,7 @@ export default function CurriculumsPage() {
                 open={deleteDialog.open}
                 onOpenChange={(open) => setDeleteDialog({ open, item: open ? deleteDialog.item : null })}
                 title="Delete Curriculum"
-                itemName={deleteDialog.item?.name}
+                itemName={deleteDialog.item?.nameEn}
                 onConfirm={handleDelete}
             />
         </AdminLayout>
