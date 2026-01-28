@@ -1,5 +1,5 @@
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
-import { count, createCollection, createLiveQueryCollection, eq } from "@tanstack/react-db";
+import { count, createCollection, createLiveQueryCollection, createOptimisticAction, eq } from "@tanstack/react-db";
 import { ApiResponse, PaginatedResult } from "@/types/ApiResponse";
 import { queryClient } from "@/lib/utils";
 import { levelCollection } from "./levels";
@@ -35,6 +35,43 @@ export const curriculumCollection = createCollection(queryCollectionOptions({
     getKey: (item) => item.id,
 }))
 
+export type ToggleStatusPayload = EducationCurriculumItem & { locale?: string }
+
+export const toggleStatus = createOptimisticAction<ToggleStatusPayload>({
+        onMutate: (data) => {
+            curriculumCollection.update(
+                data.id,
+                draft => { draft.isActive = !draft.isActive }
+            )
+        },
+        mutationFn: async (data, { transaction }) => {
+            const locale = (transaction.mutations[0].metadata as { locale?: string })?.locale ?? data.locale ?? 'en'
+            // const 
+            try {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum/${data.id}/toggle-status`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Accept': 'application/json',
+                        'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                    },
+                    body: JSON.stringify(apiPayload),
+                })
+                const responseData: ApiResponse<EducationCurriculumItem> = await response.json()
+                if (!response.ok) {
+                    throw new Error(responseData.message)
+                }
+
+                await curriculumCollection.utils.refetch()
+
+                return responseData.data as EducationCurriculumItem
+            } catch (error) {
+                console.error(error)
+                throw error
+            }
+        }
+    })
 
 export const curriculumWithLevelsCount = createLiveQueryCollection({
     query: q => {

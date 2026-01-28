@@ -203,8 +203,17 @@ export default function DomainsPage() {
     ]
 
     const handleDelete = async () => {
-        if (deleteDialog.domain) {
+        if (deleteDialog.domain?.id) {
             // setDomains((prev) => prev.filter((d) => d.id !== deleteDialog.domain!.id))
+            const transaction = domainCollection.delete(deleteDialog.domain.id)
+            transaction.isPersisted.promise.then(result => {
+                if (result.state === "completed") {
+                    setDeleteDialog({ open: false, domain: null })
+                }
+                if (result.state === "failed") {
+                    console.error(result.error?.message)
+                }
+            })
         }
     }
 

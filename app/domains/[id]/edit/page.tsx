@@ -4,6 +4,10 @@
 import { useRouter, useParams } from "next/navigation"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { EntityForm } from "@/components/admin/entity-form"
+import { domainCollection } from "@/collections/domain"
+import { eq, useLiveQuery } from "@tanstack/react-db"
+import { curriculumCollection } from "@/collections/curriculums"
+import { useLocale } from "@/lib/locale-context"
 
 // Mock data - in real app, this would come from API
 const mockDomain = {
@@ -18,7 +22,7 @@ const mockDomain = {
 
 const domainFields = [
     {
-        key: "name",
+        key: "nameEn",
         label: "Domain Name",
         type: "text" as const,
         placeholder: "e.g. Science & Technology",
@@ -26,8 +30,8 @@ const domainFields = [
         section: "main" as const,
     },
     {
-        key: "description",
-        label: "Description",
+        key: "descriptionEn",
+        label: "Description (EN)",
         type: "textarea" as const,
         placeholder: "Brief description of this domain...",
         section: "main" as const,
@@ -43,52 +47,78 @@ const domainFields = [
     },
     {
         key: "descriptionAr",
-        label: "Description",
+        label: "Description (AR)",
         labelAr: "الوصف",
         type: "textarea" as const,
         placeholderAr: "وصف مختصر للمجال...",
         section: "arabic" as const,
     },
     {
-        key: "active",
+        key: "isActive",
         label: "Active Status",
         type: "switch" as const,
         section: "settings" as const,
     },
     {
-        key: "order",
+        key: "orderIndex",
         label: "Display Order",
         type: "number" as const,
         placeholder: "1",
         section: "settings" as const,
     },
+    {
+        key: "code",
+        label: "Code",
+        type: "text" as const,
+        placeholder: "123",
+        section: "settings" as const,
+        required: true,
+    }
 ]
 
 export default function EditDomainPage() {
     const router = useRouter()
-    const params = useParams()
+    const params = useParams<{ id: string }>()
+    const { locale } = useLocale()
 
     const handleSubmit = async (data: Record<string, any>) => {
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        console.log("Updating domain:", params.id, data)
-        router.push("/domains")
+        const transaction = domainCollection.update(
+            parseInt(params.id),
+            draft => {
+                draft.nameEn = data.nameEn
+                draft.descriptionEn = data.descriptionEn
+                draft.nameAr = data.nameAr
+                draft.descriptionAr = data.descriptionAr
+                draft.code = data.code
+            }
+        )
+        const persisted = await transaction.isPersisted.promise
+        if (persisted.state === "completed") {
+            router.push("/domains")
+        } else if (persisted.state === "failed") {
+            console.error(persisted.error?.message ?? "Failed to update domain")
+        }
     }
+
+    const { data: domain } = useLiveQuery(q => q.from({ domains: domainCollection })
+        .where(({ domains }) => eq(domains.id, parseInt(params.id)))
+        .findOne())
+
 
     return (
         <AdminLayout
             breadcrumbs={[
                 { label: "Dashboard", href: "/" },
                 { label: "Education Domains", href: "/domains" },
-                { label: mockDomain.name, href: `/domains/${params.id}` },
+                { label: locale === "ar" ? domain?.nameAr ?? '' : domain?.nameEn ?? '', href: `/domains/${params.id}` },
                 { label: "Edit" },
             ]}
         >
             <EntityForm
-                title={`Edit: ${mockDomain.name}`}
+                title={`Edit: ${locale === "ar" ? domain?.nameAr ?? '' : domain?.nameEn ?? ''}`}
                 description="Update the education domain details"
                 fields={domainFields}
-                initialData={mockDomain}
+                initialData={domain}
                 onSubmit={handleSubmit}
                 submitLabel="Save Changes"
                 isEdit

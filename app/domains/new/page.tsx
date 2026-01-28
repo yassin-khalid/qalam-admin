@@ -4,6 +4,8 @@
 import { useRouter } from "next/navigation"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { EntityForm } from "@/components/admin/entity-form"
+import { domainCollection } from "@/collections/domain"
+import { useLocale } from "@/lib/locale-context"
 
 const domainFields = [
     {
@@ -15,8 +17,8 @@ const domainFields = [
         section: "main" as const,
     },
     {
-        key: "description",
-        label: "Description",
+        key: "descriptionEn",
+        label: "Description (EN)",
         type: "textarea" as const,
         placeholder: "Brief description of this domain...",
         section: "main" as const,
@@ -32,7 +34,7 @@ const domainFields = [
     },
     {
         key: "descriptionAr",
-        label: "Description",
+        label: "Description (AR)",
         labelAr: "الوصف",
         type: "textarea" as const,
         placeholderAr: "وصف مختصر للمجال...",
@@ -45,22 +47,44 @@ const domainFields = [
         section: "settings" as const,
     },
     {
-        key: "order",
+        key: "orderIndex",
         label: "Display Order",
         type: "number" as const,
         placeholder: "1",
         section: "settings" as const,
     },
+    {
+        key: "code",
+        label: "Code",
+        type: "text" as const,
+        placeholder: "123",
+        section: "settings" as const,
+        required: true,
+    }
 ]
 
 export default function NewDomainPage() {
     const router = useRouter()
+    const { locale } = useLocale()
 
     const handleSubmit = async (data: Record<string, any>) => {
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        console.log("Creating domain:", data)
-        router.push("/domains")
+        const result = domainCollection.insert(
+            {
+                nameEn: data.name,
+                descriptionEn: data.descriptionEn,
+                nameAr: data.nameAr,
+                descriptionAr: data.descriptionAr,
+                code: data.code || "123",
+                createdAt: new Date().toISOString(),
+                id: 0,
+            },
+        )
+        const persisted = await result.isPersisted.promise
+        if (persisted.state === "completed") {
+            router.push("/domains")
+        } else if (persisted.state === "failed") {
+            console.error(persisted.error?.message ?? "Failed to create domain")
+        }
     }
 
     return (

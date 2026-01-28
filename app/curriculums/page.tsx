@@ -8,7 +8,7 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { Badge } from "@/components/ui/badge"
-import { curriculumCollection, curriculumWithLevelsCount } from "@/collections/curriculums"
+import { curriculumWithLevelsCount, toggleStatus } from "@/collections/curriculums"
 import { eq, useLiveQuery } from "@tanstack/react-db"
 import { domainCollection } from "@/collections/domain"
 import { useLocale } from "@/lib/locale-context"
@@ -21,6 +21,9 @@ interface Curriculum {
     domainId: number
     active: boolean
     order: number
+    descriptionAr: string
+    descriptionEn: string
+    country: string
     levelsCount: number
     createdAt: string
 }
@@ -36,6 +39,9 @@ const mockCurriculums: Curriculum[] = [
         order: 1,
         levelsCount: 4,
         createdAt: "2024-01-15",
+        descriptionAr: "المنهج الوطني 2024",
+        descriptionEn: "National Curriculum 2024",
+        country: "Egypt",
     },
     {
         id: 2,
@@ -47,6 +53,9 @@ const mockCurriculums: Curriculum[] = [
         order: 2,
         levelsCount: 3,
         createdAt: "2024-01-12",
+        descriptionAr: "البكالوريا الدولية",
+        descriptionEn: "International Baccalaureate",
+        country: "Egypt",
     },
     {
         id: 3,
@@ -58,6 +67,9 @@ const mockCurriculums: Curriculum[] = [
         order: 3,
         levelsCount: 2,
         createdAt: "2024-01-10",
+        descriptionAr: "التنسيب المتقدم",
+        descriptionEn: "Advanced Placement",
+        country: "Egypt",
     },
     {
         id: 4,
@@ -69,6 +81,9 @@ const mockCurriculums: Curriculum[] = [
         order: 4,
         levelsCount: 5,
         createdAt: "2024-01-08",
+        descriptionAr: "كامبريدج IGCSE",
+        descriptionEn: "Cambridge IGCSE",
+        country: "Egypt",
     },
 ]
 
@@ -93,6 +108,8 @@ export default function CurriculumsPage() {
         })), [locale]
     )
     const { data: domains } = useLiveQuery(q => q.from({ domains: domainCollection }))
+
+
 
     const columns: ColumnDef<Curriculum>[] = [
         {
@@ -148,13 +165,26 @@ export default function CurriculumsPage() {
                     onView={() => router.push(`/curriculums/${row.original.id}`)}
                     onEdit={() => router.push(`/curriculums/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, item: row.original })}
-                    onToggleStatus={() => {
+                    onToggleStatus={
+                        // () => {
                         // setCurriculums((prev) =>
                         //     prev.map((c) =>
                         //         c.id === row.original.id ? { ...c, active: !c.active } : c
                         //     )
                         // )
-                    }}
+                        // }
+                        () => toggleStatus({
+                            id: row.original.id,
+                            nameEn: row.original.nameEn,
+                            nameAr: row.original.nameAr,
+                            domainId: row.original.domainId,
+                            isActive: row.original.active,
+                            createdAt: row.original.createdAt,
+                            descriptionAr: row.original.descriptionAr,
+                            descriptionEn: row.original.descriptionEn,
+                            country: row.original.country,
+                        })
+                    }
                     isActive={row.original.active}
                 />
             ),
