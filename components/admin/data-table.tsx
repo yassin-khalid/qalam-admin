@@ -27,6 +27,7 @@ import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
@@ -327,27 +328,29 @@ export function ActionsCell({
                 <IconDots className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{t("common.actions")}</DropdownMenuLabel>
-                {onView && (
-                    <DropdownMenuItem onClick={onView}>{t("common.view")}</DropdownMenuItem>
-                )}
-                {onEdit && <DropdownMenuItem onClick={onEdit}>{t("common.edit")}</DropdownMenuItem>}
-                {onToggleStatus && (
-                    <DropdownMenuItem onClick={onToggleStatus}>
-                        {isActive ? t("common.inactive") : t("common.active")}
-                    </DropdownMenuItem>
-                )}
-                {onDelete && (
-                    <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            onClick={onDelete}
-                            className="text-destructive focus:text-destructive"
-                        >
-                            {t("common.delete")}
+                <DropdownMenuGroup>
+                    <DropdownMenuLabel>{t("common.actions")}</DropdownMenuLabel>
+                    {onView && (
+                        <DropdownMenuItem onClick={onView}>{t("common.view")}</DropdownMenuItem>
+                    )}
+                    {onEdit && <DropdownMenuItem onClick={onEdit}>{t("common.edit")}</DropdownMenuItem>}
+                    {onToggleStatus && (
+                        <DropdownMenuItem onClick={onToggleStatus}>
+                            {isActive ? t("common.inactive") : t("common.active")}
                         </DropdownMenuItem>
-                    </>
-                )}
+                    )}
+                    {onDelete && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={onDelete}
+                                className="text-destructive focus:text-destructive"
+                            >
+                                {t("common.delete")}
+                            </DropdownMenuItem>
+                        </>
+                    )}
+                </DropdownMenuGroup>
             </DropdownMenuContent>
         </DropdownMenu>
     )
