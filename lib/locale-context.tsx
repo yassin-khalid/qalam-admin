@@ -168,6 +168,10 @@ const translations: Record<Locale, Record<string, string>> = {
         "form.arabicFields": "Arabic Fields",
         "form.basicInfo": "Basic Information",
         "form.additionalInfo": "Additional Information",
+
+        // Teachers
+        "teachers.canBeActivated": "Ready to activate",
+        "teachers.cannotBeActivated": "Not ready to activate",
     },
     ar: {
         // Navigation
@@ -323,6 +327,10 @@ const translations: Record<Locale, Record<string, string>> = {
         "form.arabicFields": "الحقول العربية",
         "form.basicInfo": "المعلومات الأساسية",
         "form.additionalInfo": "معلومات إضافية",
+
+        // Teachers
+        "teachers.canBeActivated": "جاهز للتفعيل",
+        "teachers.cannotBeActivated": "غير جاهز للتفعيل",
     },
 }
 
