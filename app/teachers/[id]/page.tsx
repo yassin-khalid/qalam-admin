@@ -21,12 +21,13 @@ import {
 } from "@tabler/icons-react"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, queryClient } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { useLocale } from "@/lib/locale-context"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -47,6 +48,9 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { ApiResponse } from "@/types/ApiResponse"
+// import { approveDocument, teacherColllection, TeacherDocument, teacherDocumentsCollection } from "@/collections/teachers"
+// import { createOptimisticAction, eq, useLiveQuery } from "@tanstack/react-db"
 
 // Mock teacher detail data
 const mockTeacherDetail = {
@@ -65,14 +69,14 @@ const mockTeacherDetail = {
             documentType: 1, // 1: Identity, 2: Certificate
             filePath: "uploads/teachers/1/identity/ed928a64-d1b6-455e-a5b2-35fd698ae8e9.png",
             verificationStatus: 1, // 1: Pending, 2: Approved, 3: Rejected
-            rejectionReason: null,
-            reviewedAt: null,
+            rejectionReason: null as string | null,
+            reviewedAt: null as string | null,
             documentNumber: "1234567890",
             identityType: 1, // 1: National ID, 2: Passport, 3: Iqama
             issuingCountryCode: "SA",
-            certificateTitle: null,
-            issuer: null,
-            issueDate: null,
+            certificateTitle: "National ID" as string | null,
+            issuer: null as string | null,
+            issueDate: null as string | null,
             createdAt: "2026-01-29T03:19:48.0781665",
         },
         {
@@ -80,14 +84,14 @@ const mockTeacherDetail = {
             documentType: 2,
             filePath: "uploads/teachers/1/certificates/dd9e01d2-478f-44d6-8567-4f8c87f6b8c6.png",
             verificationStatus: 1,
-            rejectionReason: null,
-            reviewedAt: null,
-            documentNumber: null,
-            identityType: null,
-            issuingCountryCode: null,
-            certificateTitle: "Bachelor of Science in Mathematics Education",
-            issuer: "King Saud University",
-            issueDate: "2016-05-15",
+            rejectionReason: null as string | null,
+            reviewedAt: null as string | null,
+            documentNumber: null as string | null,
+            identityType: null as number | null,
+            issuingCountryCode: null as string | null,
+            certificateTitle: "Bachelor of Science in Mathematics Education" as string | null,
+            issuer: "King Saud University" as string | null,
+            issueDate: "2016-05-15" as string | null,
             createdAt: "2026-01-29T03:19:48.144917",
         },
     ],
@@ -115,12 +119,196 @@ export default function TeacherDetailPage() {
     const params = useParams()
     const teacherId = params.id
 
-    const [teacher] = React.useState(mockTeacherDetail)
+    // const [teacher] = React.useState(mockTeacherDetail)
     const [blockDialogOpen, setBlockDialogOpen] = React.useState(false)
     const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
     const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
     const [selectedDocument, setSelectedDocument] = React.useState<typeof mockTeacherDetail.documents[0] | null>(null)
     const [rejectionReason, setRejectionReason] = React.useState("")
+
+    // const { data: teacherDocuments } = useLiveQuery(q => q.from({ teacherDocuments: teacherDocumentsCollection(parseInt(params.id as string)) }))
+    // const { data: teacherPreview } = useLiveQuery(q => q.from({ teacher: teacherColllection }).where(({ teacher }) => eq(teacher.teacherId, parseInt(params.id as string))).findOne())
+
+    // const teacher = {
+    //     ...teacherPreview,
+    //     documents: teacherDocuments,
+    // }
+
+    type TeacherDetail = {
+        teacherId: number,
+        userId: number,
+        fullName: string,
+        phoneNumber: string,
+        email: "test@qalam.com",
+        bio: string | null,
+        status: number,
+        location: number,
+        createdAt: string,
+        documents: {
+            id: number,
+            documentType: number,
+            filePath: string,
+            verificationStatus: number,
+            rejectionReason: string | null,
+            reviewedAt: string | null,
+            documentNumber: string | null,
+            identityType: number | null,
+            issuingCountryCode: null,
+            certificateTitle: string | null,
+            issuer: string | null,
+            issueDate: string | null,
+            createdAt: string,
+        }[]
+    }
+
+    const { data: teacher } = useQuery({
+        queryKey: ['teacher', teacherId],
+        queryFn: async () => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            })
+            const data: ApiResponse<TeacherDetail> = await response.json()
+            if (!data.succeeded) {
+                throw new Error(data.message)
+            }
+            return data.data
+        },
+    })
+
+    const { mutate: approveDocument } = useMutation({
+        mutationFn: async ({ teacherId, documentId }: { teacherId: number, documentId: number }) => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Documents/${documentId}/Approve`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            });
+            const data = await response.json() as ApiResponse<null>
+            if (!data.succeeded) {
+                throw new Error(data.message);
+            }
+            return data.message;
+        },
+        onMutate: async ({ documentId, teacherId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            const previousData = queryClient.getQueryData<TeacherDetail | null>(['teacher', teacherId])
+            if (previousData) {
+                queryClient.setQueryData<TeacherDetail | null>(['teacher', teacherId], (old) => {
+                    if (!old) return null;
+                    return {
+                        ...old,
+                        documents: old.documents.map(doc => doc.id === documentId ?
+                            { ...doc, verificationStatus: 2 } : doc),
+                    }
+                })
+            }
+        },
+        onSuccess: (message) => {
+            console.log("Document approved:", message)
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error) => {
+            console.error("Error approving document:", error)
+        },
+    })
+
+    const { mutate: rejectDocument } = useMutation({
+        mutationFn: async ({ teacherId, documentId }: { teacherId: number, documentId: number }) => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Documents/${documentId}/Reject`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            });
+            const data = await response.json() as ApiResponse<null>
+            if (!data.succeeded) {
+                throw new Error(data.message);
+            }
+            return data.message;
+        },
+        onMutate: async ({ documentId, teacherId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            const previousData = queryClient.getQueryData<TeacherDetail | null>(['teacher', teacherId])
+            if (previousData) {
+                queryClient.setQueryData<TeacherDetail | null>(['teacher', teacherId], (old) => {
+                    if (!old) return null;
+                    return {
+                        ...old,
+                        documents: old.documents.map(doc => doc.id === documentId ?
+                            { ...doc, verificationStatus: 3, rejectionReason } : doc),
+                    }
+                })
+            }
+        },
+        onSuccess: (message) => {
+            console.log("Document approved:", message)
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+
+        onError: (error) => {
+            console.error("Error approving document:", error)
+        },
+    })
+
+    const { mutate: blockTeacher } = useMutation({
+        mutationFn: async ({ teacherId }: { teacherId: number }) => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Block`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            });
+            const data = await response.json() as ApiResponse<null>
+            if (!data.succeeded) {
+                throw new Error(data.message);
+            }
+            return data.message;
+        },
+        onMutate: async ({ teacherId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            const previousData = queryClient.getQueryData<TeacherDetail | null>(['teacher', teacherId])
+            if (previousData) {
+                queryClient.setQueryData<TeacherDetail | null>(['teacher', teacherId], (old) => {
+                    if (!old) return null;
+                    return {
+                        ...old,
+                        status: 5,
+                    }
+                })
+            }
+        },
+        onSuccess: (message) => {
+            console.log("Teacher blocked:", message)
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error) => {
+            console.error("Error blocking teacher:", error)
+        },
+    })
+
 
     const BackArrow = direction === "rtl" ? IconArrowRight : IconArrowLeft
 
@@ -129,16 +317,28 @@ export default function TeacherDetailPage() {
             case 1:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
-                        {t("teachers.pending")}
+                        {t("teachers.awaiting")}
                     </Badge>
                 )
             case 2:
+                return (
+                    <Badge variant="outline" className="border-warning text-warning bg-warning/10">
+                        {t("teachers.pending")}
+                    </Badge>
+                )
+            case 3:
+                return (
+                    <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
+                        {t("teachers.rejected")}
+                    </Badge>
+                )
+            case 4:
                 return (
                     <Badge variant="outline" className="border-success text-success bg-success/10">
                         {t("teachers.active")}
                     </Badge>
                 )
-            case 3:
+            case 5:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.blocked")}
@@ -188,23 +388,40 @@ export default function TeacherDetailPage() {
         }
     }
 
-    const handleApproveDocument = (doc: typeof mockTeacherDetail.documents[0]) => {
+    const handleApproveDocument = (doc: TeacherDetail['documents'][0]) => {
         setSelectedDocument(doc)
         setApproveDialogOpen(true)
     }
 
-    const handleRejectDocument = (doc: typeof mockTeacherDetail.documents[0]) => {
+    const handleRejectDocument = (doc: TeacherDetail['documents'][0]) => {
         setSelectedDocument(doc)
         setRejectDialogOpen(true)
         setRejectionReason("")
     }
 
     const confirmApprove = () => {
-        // API call: POST /api/teachers/{teacherId}/documents/{documentId}/approve
-        console.log("[v0] Approving document:", {
-            teacherId: teacher.teacherId,
-            documentId: selectedDocument?.id,
-        })
+        // // API call: POST /api/teachers/{teacherId}/documents/{documentId}/approve
+        // console.log("[v0] Approving document:", {
+        //     teacherId: teacher.teacherId,
+        //     documentId: selectedDocument?.id,
+        // })
+        console.log({ confirmApprove: selectedDocument })
+        if (!selectedDocument) {
+            console.log("No selected document")
+            return
+        }
+
+        approveDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id })
+        // const transaction = approveDocument({ teacherId: parseInt(params.id as string), documentId: selectedDocument.id })
+        // transaction.isPersisted.promise.then((tx) => {
+        //     if (tx.state === "failed") {
+        //         console.error("")
+        //     }
+        //     if (tx.state === "completed") {
+        //         console.log("Document approved")
+        //     }
+        // })
+
         setApproveDialogOpen(false)
         setSelectedDocument(null)
     }
@@ -213,20 +430,26 @@ export default function TeacherDetailPage() {
         if (!rejectionReason.trim()) {
             return
         }
-        // API call: POST /api/teachers/{teacherId}/documents/{documentId}/reject
-        console.log("[v0] Rejecting document:", {
-            teacherId: teacher.teacherId,
-            documentId: selectedDocument?.id,
-            reason: rejectionReason,
-        })
+        // // API call: POST /api/teachers/{teacherId}/documents/{documentId}/reject
+        // console.log("[v0] Rejecting document:", {
+        //     teacherId: teacherId,
+        //     documentId: selectedDocument?.id,
+        //     reason: rejectionReason,
+        // })
+        if (!selectedDocument) {
+            console.log("No selected document")
+            return
+        }
+        rejectDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id })
         setRejectDialogOpen(false)
         setSelectedDocument(null)
         setRejectionReason("")
     }
 
     const confirmBlockTeacher = () => {
-        // API call: POST /api/teachers/{teacherId}/block
-        console.log("[v0] Blocking teacher:", teacher.teacherId)
+        // // API call: POST /api/teachers/{teacherId}/block
+        // console.log("[v0] Blocking teacher:", teacherId)
+        blockTeacher({ teacherId: Number(teacherId) })
         setBlockDialogOpen(false)
     }
 
@@ -248,7 +471,7 @@ export default function TeacherDetailPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {teacher.status !== 3 ? (
+                        {teacher?.status !== 3 ? (
                             <Button
                                 variant="destructive"
                                 size="sm"
@@ -277,11 +500,11 @@ export default function TeacherDetailPage() {
                                 <Avatar className="h-20 w-20">
                                     <AvatarImage src="/placeholder-avatar.jpg" />
                                     <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                                        {teacher.fullName.split(" ").map((n) => n[0]).join("")}
+                                        {teacher?.fullName?.split(" ").map((n) => n[0]).join("") || ""}
                                     </AvatarFallback>
                                 </Avatar>
-                                <h3 className="mt-4 text-lg font-semibold">{teacher.fullName}</h3>
-                                <div className="mt-2">{getStatusBadge(teacher.status)}</div>
+                                <h3 className="mt-4 text-lg font-semibold">{teacher?.fullName}</h3>
+                                <div className="mt-2">{getStatusBadge(teacher?.status || 0)}</div>
                             </div>
 
                             <Separator />
@@ -293,7 +516,7 @@ export default function TeacherDetailPage() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs text-muted-foreground">{t("teachers.email")}</p>
-                                        <p className="text-sm font-medium truncate">{teacher.email}</p>
+                                        <p className="text-sm font-medium truncate">{teacher?.email}</p>
                                     </div>
                                 </div>
 
@@ -303,7 +526,7 @@ export default function TeacherDetailPage() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs text-muted-foreground">{t("teachers.phoneNumber")}</p>
-                                        <p className="text-sm font-medium" dir="ltr">{teacher.phoneNumber}</p>
+                                        <p className="text-sm font-medium" dir="ltr">{teacher?.phoneNumber}</p>
                                     </div>
                                 </div>
 
@@ -314,7 +537,7 @@ export default function TeacherDetailPage() {
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs text-muted-foreground">{t("teachers.location")}</p>
                                         <p className="text-sm font-medium">
-                                            {locationNames[teacher.location]?.[locale] || teacher.location}
+                                            {locationNames[teacher?.location || 0]?.[locale] || teacher?.location}
                                         </p>
                                     </div>
                                 </div>
@@ -326,7 +549,7 @@ export default function TeacherDetailPage() {
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs text-muted-foreground">{t("common.createdAt")}</p>
                                         <p className="text-sm font-medium">
-                                            {new Date(teacher.createdAt).toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US", {
+                                            {teacher?.createdAt && new Date(teacher.createdAt).toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US", {
                                                 year: "numeric",
                                                 month: "long",
                                                 day: "numeric",
@@ -335,12 +558,12 @@ export default function TeacherDetailPage() {
                                     </div>
                                 </div>
 
-                                {teacher.bio && (
+                                {teacher?.bio && (
                                     <>
                                         <Separator />
                                         <div>
                                             <p className="text-xs text-muted-foreground mb-2">{t("teachers.bio")}</p>
-                                            <p className="text-sm">{teacher.bio}</p>
+                                            <p className="text-sm">{teacher?.bio || ""}</p>
                                         </div>
                                     </>
                                 )}
@@ -359,33 +582,33 @@ export default function TeacherDetailPage() {
                                     </CardDescription>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Badge variant="secondary">{teacher.totalDocuments} {t("teachers.totalDocuments")}</Badge>
+                                    <Badge variant="secondary">{teacher?.totalDocuments || 0} {t("teachers.totalDocuments")}</Badge>
                                 </div>
                             </div>
                             {/* Document Stats */}
                             <div className="flex flex-wrap gap-3 mt-4">
                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-warning/10 text-warning text-sm">
                                     <IconClock className="h-4 w-4" />
-                                    <span>{teacher.pendingDocuments} {t("teachers.pendingDocuments")}</span>
+                                    <span>{teacher?.pendingDocuments || 0} {t("teachers.pendingDocuments")}</span>
                                 </div>
                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/10 text-success text-sm">
                                     <IconCheck className="h-4 w-4" />
-                                    <span>{teacher.approvedDocuments} {t("teachers.approvedDocuments")}</span>
+                                    <span>{teacher?.approvedDocuments || 0} {t("teachers.approvedDocuments")}</span>
                                 </div>
                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-sm">
                                     <IconX className="h-4 w-4" />
-                                    <span>{teacher.rejectedDocuments} {t("teachers.rejectedDocuments")}</span>
+                                    <span>{teacher?.rejectedDocuments || 0} {t("teachers.rejectedDocuments")}</span>
                                 </div>
                             </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {teacher.documents.length === 0 ? (
+                            {teacher?.documents.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-12 text-center">
                                     <IconFileText className="h-12 w-12 text-muted-foreground mb-4" />
                                     <p className="text-muted-foreground">{t("teachers.noDocuments")}</p>
                                 </div>
                             ) : (
-                                teacher.documents.map((doc) => (
+                                teacher?.documents.map((doc) => (
                                     <Card key={doc.id} className="border-border">
                                         <CardContent className="p-4">
                                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -469,7 +692,7 @@ export default function TeacherDetailPage() {
                                                 {/* Actions */}
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <a
-                                                        href={`/${doc.filePath}`}
+                                                        href={`${process.env.NEXT_PUBLIC_API_URL}/${doc.filePath}`}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
@@ -507,18 +730,18 @@ export default function TeacherDetailPage() {
                             )}
 
                             {/* Activation Status */}
-                            <Card className={`border-2 ${teacher.canBeActivated ? "border-success bg-success/5" : "border-muted bg-muted/50"}`}>
+                            <Card className={`border-2 ${teacher?.canBeActivated ? "border-success bg-success/5" : "border-muted bg-muted/50"}`}>
                                 <CardContent className="p-4">
                                     <div className="flex items-center gap-3">
-                                        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${teacher.canBeActivated ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
-                                            {teacher.canBeActivated ? <IconCheck className="h-5 w-5" /> : <IconAlertCircle className="h-5 w-5" />}
+                                        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${teacher?.canBeActivated ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
+                                            {teacher?.canBeActivated ? <IconCheck className="h-5 w-5" /> : <IconAlertCircle className="h-5 w-5" />}
                                         </div>
                                         <div>
                                             <p className="font-medium">
-                                                {teacher.canBeActivated ? t("teachers.canBeActivated") : t("teachers.cannotBeActivated")}
+                                                {teacher?.canBeActivated ? t("teachers.canBeActivated") : t("teachers.cannotBeActivated")}
                                             </p>
                                             <p className="text-sm text-muted-foreground">
-                                                {teacher.canBeActivated
+                                                {teacher?.canBeActivated
                                                     ? locale === "ar"
                                                         ? "جميع الوثائق معتمدة ويمكن تفعيل المعلم"
                                                         : "All documents approved, teacher can be activated"
@@ -543,7 +766,7 @@ export default function TeacherDetailPage() {
                         <AlertDialogDescription>
                             {t("teachers.confirmBlock")}
                             <span className="block mt-2 font-medium text-foreground">
-                                {teacher.fullName} ({teacher.email})
+                                {teacher?.fullName} ({teacher?.email || ""})
                             </span>
                         </AlertDialogDescription>
                     </AlertDialogHeader>

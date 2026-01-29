@@ -35,7 +35,7 @@ export const curriculumCollection = createCollection(queryCollectionOptions({
     getKey: (item) => item.id,
 }))
 
-export type ToggleStatusPayload = EducationCurriculumItem & { locale?: string }
+export type ToggleStatusPayload = EducationCurriculumItem
 
 export const toggleStatus = createOptimisticAction<ToggleStatusPayload>({
         onMutate: (data) => {
@@ -44,19 +44,19 @@ export const toggleStatus = createOptimisticAction<ToggleStatusPayload>({
                 draft => { draft.isActive = !draft.isActive }
             )
         },
-        mutationFn: async (data, { transaction }) => {
-            const locale = (transaction.mutations[0].metadata as { locale?: string })?.locale ?? data.locale ?? 'en'
-            // const 
+        mutationFn: async (data) => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
             try {
                 const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum/${data.id}/toggle-status`, {
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Authorization': `Bearer ${access_token}`,
                         'Accept': 'application/json',
                         'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                     },
-                    body: JSON.stringify(apiPayload),
+                    body: JSON.stringify(data),
                 })
                 const responseData: ApiResponse<EducationCurriculumItem> = await response.json()
                 if (!response.ok) {

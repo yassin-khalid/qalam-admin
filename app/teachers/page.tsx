@@ -41,6 +41,8 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useLiveQuery } from "@tanstack/react-db"
+import { teacherColllection } from "@/collections/teachers"
 
 // Mock data for teachers
 const mockTeachers = [
@@ -116,15 +118,18 @@ export default function TeachersPage() {
     const [blockDialogOpen, setBlockDialogOpen] = React.useState(false)
     const [selectedTeacher, setSelectedTeacher] = React.useState<typeof mockTeachers[0] | null>(null)
 
-    const filteredTeachers = mockTeachers.filter((teacher) => {
-        const matchesSearch =
-            teacher.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            teacher.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            teacher.phoneNumber.includes(searchQuery)
-        const matchesStatus =
-            statusFilter === "all" || teacher.status === parseInt(statusFilter)
-        return matchesSearch && matchesStatus
-    })
+    // const filteredTeachers = mockTeachers.filter((teacher) => {
+    //     const matchesSearch =
+    //         teacher.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    //         teacher.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    //         teacher.phoneNumber.includes(searchQuery)
+    //     const matchesStatus =
+    //         statusFilter === "all" || teacher.status === parseInt(statusFilter)
+    //     return matchesSearch && matchesStatus
+    // })
+    const { data: teachers } = useLiveQuery(q => q.from({ teachers: teacherColllection }))
+
+
 
     const getStatusBadge = (status: number) => {
         switch (status) {
@@ -257,14 +262,14 @@ export default function TeachersPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredTeachers.length === 0 ? (
+                                {teachers?.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                                             {t("common.noData")}
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    filteredTeachers.map((teacher) => (
+                                    teachers?.map((teacher) => (
                                         <TableRow key={teacher.teacherId}>
                                             <TableCell className="font-medium">{teacher.fullName}</TableCell>
                                             <TableCell>{teacher.email}</TableCell>

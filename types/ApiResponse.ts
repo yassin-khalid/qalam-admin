@@ -3,13 +3,12 @@ export type ApiResponse<T> = {
   statusCode: number;
   succeeded: boolean;
   message: string;
-  data: T;
+  data: T | null;
   errors: unknown | null;
-  meta: unknown | null;
+  meta: PaginationMeta;
 };
 
-export type PaginatedResult<T> = {
-  items: T[];
+export type PaginationMeta = {
   totalCount: number;
   pageNumber: number;
   pageSize: number;

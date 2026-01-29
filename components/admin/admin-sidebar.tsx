@@ -78,6 +78,11 @@ const navigationItems = [
         icon: IconFile,
         href: "/lessons",
     },
+    {
+        titleKey: "nav.teachers",
+        icon: IconUser,
+        href: "/teachers",
+    },
 ]
 
 export function AdminSidebar() {
