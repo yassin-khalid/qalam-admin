@@ -4,6 +4,7 @@ import { Geist, Geist_Mono, Noto_Sans_Arabic, Noto_Kufi_Arabic } from 'next/font
 // import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
 import './globals.css'
+import { Toaster } from "@/components/ui/sonner"
 
 const _geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
@@ -11,17 +12,17 @@ const _geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono
 const _notoArabic = Noto_Kufi_Arabic({ subsets: ["arabic"], variable: "--font-arabic" });
 
 export const metadata: Metadata = {
-  title: 'EduAdmin - Educational Management System',
+  title: 'Qalam Admin - Educational Management System',
   description: 'Enterprise-grade admin panel for managing educational content hierarchy',
   generator: 'v0.app',
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png',
+        url: '/qalam-logo.svg',
         media: '(prefers-color-scheme: light)',
       },
       {
-        url: '/icon-dark-32x32.png',
+        url: '/qalam-logo-dark.svg',
         media: '(prefers-color-scheme: dark)',
       },
       {
@@ -44,6 +45,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <Toaster />
         {/* <Analytics /> */}
       </body>
     </html>

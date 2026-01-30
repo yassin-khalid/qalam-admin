@@ -158,7 +158,12 @@ export default function TeacherDetailPage() {
             issuer: string | null,
             issueDate: string | null,
             createdAt: string,
-        }[]
+        }[],
+        totalDocuments: number,
+        pendingDocuments: number,
+        approvedDocuments: number,
+        rejectedDocuments: number,
+        canBeActivated: boolean
     }
 
     const { data: teacher } = useQuery({
@@ -226,7 +231,7 @@ export default function TeacherDetailPage() {
     })
 
     const { mutate: rejectDocument } = useMutation({
-        mutationFn: async ({ teacherId, documentId }: { teacherId: number, documentId: number }) => {
+        mutationFn: async ({ teacherId, documentId, reason }: { teacherId: number, documentId: number, reason: string }) => {
             const access_token = localStorage.getItem('access_token');
             const locale = localStorage.getItem('locale');
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Documents/${documentId}/Reject`, {
@@ -237,6 +242,7 @@ export default function TeacherDetailPage() {
                     'Accept': 'application/json',
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                 },
+                body: JSON.stringify({ reason }),
             });
             const data = await response.json() as ApiResponse<null>
             if (!data.succeeded) {
@@ -440,7 +446,7 @@ export default function TeacherDetailPage() {
             console.log("No selected document")
             return
         }
-        rejectDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id })
+        rejectDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id, reason: rejectionReason })
         setRejectDialogOpen(false)
         setSelectedDocument(null)
         setRejectionReason("")
@@ -471,7 +477,7 @@ export default function TeacherDetailPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {teacher?.status !== 3 ? (
+                        {teacher?.status !== 5 ? (
                             <Button
                                 variant="destructive"
                                 size="sm"

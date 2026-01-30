@@ -3,7 +3,7 @@ import { ApiResponse } from "@/types/ApiResponse";
 import { createCollection, createOptimisticAction } from "@tanstack/db";
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
 
-type PendingTeacher = {
+export type PendingTeacher = {
     teacherId: number;
     userId: number;
     fullName: string;

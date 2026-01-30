@@ -1,11 +1,18 @@
 
-export type ApiResponse<T> = {
+export type ApiResponse<T> = | {
   statusCode: number;
-  succeeded: boolean;
+  succeeded: true;
+  message: string;
+  data: T;
+  errors: null;
+  meta: PaginationMeta;
+} | {
+  statusCode: number;
+  succeeded: false;
   message: string;
   data: T | null;
-  errors: unknown | null;
-  meta: PaginationMeta;
+  errors:  null;
+  meta: null;
 };
 
 export type PaginationMeta = {

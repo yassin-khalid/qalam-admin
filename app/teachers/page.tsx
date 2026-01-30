@@ -42,7 +42,10 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useLiveQuery } from "@tanstack/react-db"
-import { teacherColllection } from "@/collections/teachers"
+import { PendingTeacher, teacherColllection } from "@/collections/teachers"
+import { useMutation } from "@tanstack/react-query"
+import { ApiResponse } from "@/types/ApiResponse"
+import { queryClient } from "@/lib/utils"
 
 // Mock data for teachers
 const mockTeachers = [
@@ -129,6 +132,48 @@ export default function TeachersPage() {
     // })
     const { data: teachers } = useLiveQuery(q => q.from({ teachers: teacherColllection }))
 
+    const { mutate: blockTeacher } = useMutation({
+        mutationFn: async ({ teacherId }: { teacherId: number }) => {
+            const access_token = localStorage.getItem('access_token');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Block`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            });
+            const data = await response.json() as ApiResponse<null>
+            if (!data.succeeded) {
+                throw new Error(data.message);
+            }
+            return data.message;
+        },
+        onMutate: async ({ teacherId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teachers'] })
+            const previousData = queryClient.getQueryData<PendingTeacher[]>(['teachers'])
+            if (previousData) {
+                queryClient.setQueryData<PendingTeacher[]>(['teachers'], (old) => {
+                    if (!old) return [];
+                    return old.map((teacher) => {
+                        if (teacher.teacherId === teacherId) {
+                            return { ...teacher, status: 5 }
+                        }
+                        return teacher;
+                    });
+                });
+            }
+
+        },
+        onSuccess: (message) => {
+            console.log("Teacher blocked:", message)
+            queryClient.invalidateQueries({ queryKey: ['teachers'] })
+        },
+        onError: (error) => {
+            console.error("Error blocking teacher:", error)
+        },
+    })
 
 
     const getStatusBadge = (status: number) => {
@@ -136,16 +181,28 @@ export default function TeachersPage() {
             case 1:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
-                        {t("teachers.pending")}
+                        {t("teachers.awaiting")}
                     </Badge>
                 )
             case 2:
+                return (
+                    <Badge variant="outline" className="border-warning text-warning bg-warning/10">
+                        {t("teachers.pending")}
+                    </Badge>
+                )
+            case 3:
+                return (
+                    <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
+                        {t("teachers.rejected")}
+                    </Badge>
+                )
+            case 4:
                 return (
                     <Badge variant="outline" className="border-success text-success bg-success/10">
                         {t("teachers.active")}
                     </Badge>
                 )
-            case 3:
+            case 5:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.blocked")}
@@ -162,8 +219,10 @@ export default function TeachersPage() {
     }
 
     const confirmBlockTeacher = () => {
-        // In a real app, this would call the API: POST /api/teachers/{teacherId}/block
-        console.log("[v0] Blocking teacher:", selectedTeacher?.teacherId)
+        // // In a real app, this would call the API: POST /api/teachers/{teacherId}/block
+        // console.log("[v0] Blocking teacher:", selectedTeacher?.teacherId)
+        if (!selectedTeacher) return;
+        blockTeacher({ teacherId: selectedTeacher?.teacherId })
         setBlockDialogOpen(false)
         setSelectedTeacher(null)
     }
