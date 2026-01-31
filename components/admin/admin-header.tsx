@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -21,7 +20,7 @@ import {
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { useLocale } from "@/lib/locale-context"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme-context"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
@@ -35,7 +34,7 @@ export function AdminHeader({ breadcrumbs = [] }: AdminHeaderProps) {
     const { theme, setTheme, resolvedTheme } = useTheme()
 
     return (
-        <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
+        <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex h-14 items-center gap-4 px-4">
                 <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
 
@@ -126,6 +125,6 @@ export function AdminHeader({ breadcrumbs = [] }: AdminHeaderProps) {
                     </Button>
                 </div>
             </div>
-        </header >
+        </header>
     )
 }

@@ -5,7 +5,7 @@ export type ApiResponse<T> = | {
   message: string;
   data: T;
   errors: null;
-  meta: PaginationMeta;
+  meta: PaginationMeta | null;
 } | {
   statusCode: number;
   succeeded: false;

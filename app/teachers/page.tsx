@@ -377,7 +377,7 @@ export default function TeachersPage() {
                                                             {t("teachers.viewDetails")}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuSeparator />
-                                                        {teacher.status !== 3 ? (
+                                                        {teacher.status !== 5 ? (
                                                             <DropdownMenuItem
                                                                 className="text-destructive"
                                                                 onClick={() => handleBlockTeacher(teacher)}

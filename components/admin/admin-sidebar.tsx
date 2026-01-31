@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
     IconLayoutDashboard,
-    IconGlobe,
+    IconWorld,
     IconBook,
     IconSchool,
     IconFolder,
@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useLocale } from "@/lib/locale-context"
+import { useTheme } from "@/lib/theme-context"
+import Image from "next/image"
 
 const navigationItems = [
     {
@@ -45,7 +47,7 @@ const navigationItems = [
     },
     {
         titleKey: "nav.domains",
-        icon: IconGlobe,
+        icon: IconWorld,
         href: "/domains",
     },
     {
@@ -88,17 +90,25 @@ const navigationItems = [
 export function AdminSidebar() {
     const pathname = usePathname()
     const { t, direction } = useLocale()
+    const { theme } = useTheme()
 
     return (
         <Sidebar className="border-e border-sidebar-border" side={direction === "rtl" ? "right" : "left"}>
             <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
                 <Link href="/" className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    {/* <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                         <IconSchool className="h-5 w-5" />
                     </div>
                     <div className="flex flex-col">
                         <span className="text-sm font-semibold text-foreground">EduAdmin</span>
                         <span className="text-xs text-muted-foreground">Management System</span>
+                    </div> */}
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary-foreground">
+                        {theme === 'dark' ? <Image src="/qalam-logo-dark.svg" alt="Qalam Logo" width={36} height={36} /> : <Image src="/qalam-logo.svg" alt="Qalam Logo" width={36} height={36} />}
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-foreground">{t("auth.platformTitle")}</span>
+                        {/* <span className="text-xs text-muted-foreground">{t("auth.platformDesc")}</span> */}
                     </div>
                 </Link>
             </SidebarHeader>

@@ -108,82 +108,6 @@ export default function RegisterPage() {
         }
     })
 
-    const validateForm = () => {
-        const newErrors: Record<string, string> = {}
-
-        if (!formData.firstName.trim()) {
-            newErrors.firstName = t("auth.requiredField")
-        }
-
-        if (!formData.lastName.trim()) {
-            newErrors.lastName = t("auth.requiredField")
-        }
-
-        if (!formData.email.trim()) {
-            newErrors.email = t("auth.requiredField")
-        } else if (!validateEmail(formData.email)) {
-            newErrors.email = t("auth.invalidEmail")
-        }
-
-        if (!formData.password) {
-            newErrors.password = t("auth.requiredField")
-        } else if (formData.password.length < 8) {
-            newErrors.password = t("auth.minPassword")
-        }
-
-        if (!formData.confirmPassword) {
-            newErrors.confirmPassword = t("auth.requiredField")
-        } else if (formData.password !== formData.confirmPassword) {
-            newErrors.confirmPassword = t("auth.passwordMismatch")
-        }
-
-        if (!formData.phoneNumber.trim()) {
-            newErrors.phoneNumber = t("auth.requiredField")
-        } else if (!validatePhone(formData.phoneNumber)) {
-            newErrors.phoneNumber = t("auth.invalidPhone")
-        }
-
-        setErrors(newErrors)
-        return Object.keys(newErrors).length === 0
-    }
-
-    // const handleSubmit = async (e: React.FormEvent) => {
-    //     e.preventDefault()
-
-    //     if (!validateForm()) return
-
-    //     setIsLoading(true)
-
-    //     // Simulate API call - replace with actual API integration
-    //     try {
-    //         await new Promise(resolve => setTimeout(resolve, 1500))
-
-    //         // Mock successful registration response
-    //         const mockUser = {
-    //             id: 1,
-    //             firstName: formData.firstName,
-    //             lastName: formData.lastName,
-    //             email: formData.email,
-    //             phoneNumber: formData.phoneNumber,
-    //         }
-    //         const mockToken = "mock_access_token_" + Date.now()
-
-    //         login(mockToken, mockUser)
-    //         router.push("/")
-    //     } catch {
-    //         setErrors({ form: t("auth.registerError") })
-    //     } finally {
-    //         setIsLoading(false)
-    //     }
-    // }
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target
-        setFormData(prev => ({ ...prev, [name]: value }))
-        if (errors[name]) {
-            setErrors(prev => ({ ...prev, [name]: "" }))
-        }
-    }
 
     const form = useForm({
         defaultValues: {
@@ -196,6 +120,9 @@ export default function RegisterPage() {
         },
         validators: {
             onChange: RegisterSchema,
+        },
+        onSubmit: async ({ value }) => {
+            await mutateAsync(value)
         }
     })
     return (
@@ -468,42 +395,54 @@ export default function RegisterPage() {
                                     }}
                                 </form.Field>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="confirmPassword">{t("auth.confirmPassword")}</Label>
-                                    <div className="relative">
-                                        <Input
-                                            id="confirmPassword"
-                                            name="confirmPassword"
-                                            type={showConfirmPassword ? "text" : "password"}
-                                            placeholder={t("auth.confirmPassword")}
-                                            value={formData.confirmPassword}
-                                            onChange={handleChange}
-                                            className={errors.confirmPassword ? "border-destructive" : ""}
-                                            disabled={isLoading}
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-0 h-full px-3 end-0"
-                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                            disabled={isLoading}
-                                        >
-                                            {showConfirmPassword ? (
-                                                <IconEyeOff className="h-4 w-4 text-muted-foreground" />
-                                            ) : (
-                                                <IconEye className="h-4 w-4 text-muted-foreground" />
-                                            )}
-                                        </Button>
-                                    </div>
-                                    {errors.confirmPassword && (
-                                        <p className="text-xs text-destructive">{errors.confirmPassword}</p>
-                                    )}
-                                </div>
+                                <form.Field name="confirmPassword">
+                                    {(field) => {
+                                        const invalid = field.state.meta.isTouched && field.state.meta.isValid === false
+                                        return (
+                                            <div className="space-y-2">
+                                                <Label htmlFor={field.name}>{t("auth.confirmPassword")}</Label>
+                                                <div className="relative">
+                                                    <Input
+                                                        id={field.name}
+                                                        name={field.name}
+                                                        type={showConfirmPassword ? "text" : "password"}
+                                                        placeholder={t("auth.confirmPassword")}
+                                                        value={field.state.value}
+                                                        onChange={(e) => field.handleChange(e.target.value)}
+                                                        onBlur={field.handleBlur}
+                                                        className={invalid ? "border-destructive" : ""}
+                                                        disabled={isLoading}
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="absolute top-0 h-full px-3 end-0"
+                                                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                        disabled={isLoading}
+                                                    >
+                                                        {showConfirmPassword ? (
+                                                            <IconEyeOff className="h-4 w-4 text-muted-foreground" />
+                                                        ) : (
+                                                            <IconEye className="h-4 w-4 text-muted-foreground" />
+                                                        )}
+                                                    </Button>
+                                                </div>
+                                                {invalid && (
+                                                    <p className="text-xs text-destructive">{field.state.meta.errors?.[0]?.message}</p>
+                                                )}
+                                            </div>
+                                        )
+                                    }}
+                                </form.Field>
 
-                                <Button type="submit" className="w-full" disabled={isLoading}>
-                                    {isLoading ? t("auth.registering") : t("auth.registerButton")}
-                                </Button>
+                                <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                                    {([canSubmit, isSubmitting]) => (
+                                        <Button type="submit" className="w-full" disabled={!canSubmit || isSubmitting}>
+                                            {isSubmitting ? t("auth.registering") : t("auth.registerButton")}
+                                        </Button>
+                                    )}
+                                </form.Subscribe>
 
                                 <p className="text-center text-sm text-muted-foreground">
                                     {t("auth.haveAccount")}{" "}
