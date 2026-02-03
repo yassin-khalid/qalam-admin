@@ -111,7 +111,7 @@ export default function LoginPage() {
 
     const { mutateAsync } = useMutation({
         mutationFn: async (loginData: LoginForm) => {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Authentication/Login`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Authentication/Admin/Login`, {
                 method: "POST",
                 body: JSON.stringify(loginData),
                 headers: {

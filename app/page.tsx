@@ -6,7 +6,7 @@ import { RecentActivity } from "@/components/admin/recent-activity"
 import { QuickActions } from "@/components/admin/quick-actions"
 // import { HierarchyTree } from "@/components/admin/hierarchy-tree"
 import { useLocale } from "@/lib/locale-context"
-import { HierarchyFlow } from "@/components/admin/hierarchy-flow"
+// import { HierarchyFlow } from "@/components/admin/hierarchy-flow"
 
 export default function DashboardPage() {
   const { t } = useLocale()
@@ -37,7 +37,7 @@ export default function DashboardPage() {
         </div>
 
         {/* <HierarchyTree /> */}
-        <HierarchyFlow />
+        {/* <HierarchyFlow /> */}
       </div>
     </AdminLayout>
   )

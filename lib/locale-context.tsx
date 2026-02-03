@@ -26,6 +26,7 @@ const translations: Record<Locale, Record<string, string>> = {
         "nav.settings": "Settings",
         "nav.navigation": "Navigation",
         "nav.system": "System",
+        "nav.hierarchyManager": "Hierarchy Manager",
 
         // Common
         "common.search": "Search...",
