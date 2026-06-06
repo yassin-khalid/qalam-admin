@@ -49,64 +49,13 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ApiResponse } from "@/types/ApiResponse"
-// import { approveDocument, teacherColllection, TeacherDocument, teacherDocumentsCollection } from "@/collections/teachers"
-// import { createOptimisticAction, eq, useLiveQuery } from "@tanstack/react-db"
-
-// Mock teacher detail data
-const mockTeacherDetail = {
-    teacherId: 1,
-    userId: 2,
-    fullName: "Ahmed Al-Farsi",
-    phoneNumber: "+966554709484",
-    email: "ahmed.alfarsi@qalam.com",
-    bio: "Experienced mathematics teacher with 10 years of teaching experience in secondary education.",
-    status: 1, // 1: Pending, 2: Active, 3: Blocked
-    location: 1,
-    createdAt: "2026-01-29T03:16:58.38936",
-    documents: [
-        {
-            id: 1,
-            documentType: 1, // 1: Identity, 2: Certificate
-            filePath: "uploads/teachers/1/identity/ed928a64-d1b6-455e-a5b2-35fd698ae8e9.png",
-            verificationStatus: 1, // 1: Pending, 2: Approved, 3: Rejected
-            rejectionReason: null as string | null,
-            reviewedAt: null as string | null,
-            documentNumber: "1234567890",
-            identityType: 1, // 1: National ID, 2: Passport, 3: Iqama
-            issuingCountryCode: "SA",
-            certificateTitle: "National ID" as string | null,
-            issuer: null as string | null,
-            issueDate: null as string | null,
-            createdAt: "2026-01-29T03:19:48.0781665",
-        },
-        {
-            id: 2,
-            documentType: 2,
-            filePath: "uploads/teachers/1/certificates/dd9e01d2-478f-44d6-8567-4f8c87f6b8c6.png",
-            verificationStatus: 1,
-            rejectionReason: null as string | null,
-            reviewedAt: null as string | null,
-            documentNumber: null as string | null,
-            identityType: null as number | null,
-            issuingCountryCode: null as string | null,
-            certificateTitle: "Bachelor of Science in Mathematics Education" as string | null,
-            issuer: "King Saud University" as string | null,
-            issueDate: "2016-05-15" as string | null,
-            createdAt: "2026-01-29T03:19:48.144917",
-        },
-    ],
-    totalDocuments: 2,
-    pendingDocuments: 2,
-    approvedDocuments: 0,
-    rejectedDocuments: 0,
-    canBeActivated: false,
-}
-
-const locationNames: Record<number, { en: string; ar: string }> = {
-    1: { en: "Riyadh", ar: "الرياض" },
-    2: { en: "Jeddah", ar: "جدة" },
-    3: { en: "Dammam", ar: "الدمام" },
-}
+import {
+    LocationValue,
+    TEACHER_STATUS,
+    locationLabelKey,
+    normalizeLocation,
+    normalizeTeacherStatus,
+} from "@/lib/teacher-status"
 
 const identityTypeNames: Record<number, { en: string; ar: string }> = {
     1: { en: "National ID", ar: "الهوية الوطنية" },
@@ -119,12 +68,12 @@ export default function TeacherDetailPage() {
     const params = useParams()
     const teacherId = params.id
 
-    // const [teacher] = React.useState(mockTeacherDetail)
     const [blockDialogOpen, setBlockDialogOpen] = React.useState(false)
     const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
     const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
-    const [selectedDocument, setSelectedDocument] = React.useState<typeof mockTeacherDetail.documents[0] | null>(null)
+    const [selectedDocument, setSelectedDocument] = React.useState<TeacherDetail['documents'][number] | null>(null)
     const [rejectionReason, setRejectionReason] = React.useState("")
+    const [blockReason, setBlockReason] = React.useState("")
 
     // const { data: teacherDocuments } = useLiveQuery(q => q.from({ teacherDocuments: teacherDocumentsCollection(parseInt(params.id as string)) }))
     // const { data: teacherPreview } = useLiveQuery(q => q.from({ teacher: teacherColllection }).where(({ teacher }) => eq(teacher.teacherId, parseInt(params.id as string))).findOne())
@@ -142,7 +91,7 @@ export default function TeacherDetailPage() {
         email: string,
         bio: string | null,
         status: number,
-        location: number,
+        location: LocationValue,
         createdAt: string,
         documents: {
             id: number,
@@ -191,11 +140,21 @@ export default function TeacherDetailPage() {
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                 },
             })
-            const data: ApiResponse<TeacherDetail> = await response.json()
+            // status/location arrive as string enums (or numbers) — normalize to canonical.
+            type RawTeacherDetail = Omit<TeacherDetail, "status" | "location"> & {
+                status: string | number
+                location: string | number | boolean | null
+            }
+            const data: ApiResponse<RawTeacherDetail | null> = await response.json()
             if (!data.succeeded) {
                 throw new Error(data.message)
             }
-            return data.data
+            if (!data.data) return null
+            return {
+                ...data.data,
+                status: normalizeTeacherStatus(data.data.status),
+                location: normalizeLocation(data.data.location),
+            } satisfies TeacherDetail
         },
     })
 
@@ -286,9 +245,10 @@ export default function TeacherDetailPage() {
     })
 
     const { mutate: blockTeacher } = useMutation({
-        mutationFn: async ({ teacherId }: { teacherId: number }) => {
+        mutationFn: async ({ teacherId, reason }: { teacherId: number, reason?: string }) => {
             const access_token = localStorage.getItem('access_token');
             const locale = localStorage.getItem('locale');
+            const trimmedReason = reason?.trim();
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Block`, {
                 method: 'POST',
                 headers: {
@@ -297,6 +257,8 @@ export default function TeacherDetailPage() {
                     'Accept': 'application/json',
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                 },
+                // reason is optional (max 500); omit when empty.
+                body: JSON.stringify({ reason: trimmedReason || undefined }),
             });
             const data = await response.json() as ApiResponse<null>
             if (!data.succeeded) {
@@ -312,7 +274,7 @@ export default function TeacherDetailPage() {
                     if (!old) return null;
                     return {
                         ...old,
-                        status: 5,
+                        status: TEACHER_STATUS.Blocked,
                     }
                 })
             }
@@ -394,14 +356,16 @@ export default function TeacherDetailPage() {
         }
     }
 
-    const getDocumentTypeName = (type: number) => {
+    const getDocumentTypeName = (type: number | null | undefined) => {
         switch (type) {
             case 1:
                 return t("teachers.identityDocument")
             case 2:
                 return t("teachers.certificate")
+            case 3:
+                return t("treq.docOther")
             default:
-                return "Unknown"
+                return t("teachers.document")
         }
     }
 
@@ -415,6 +379,31 @@ export default function TeacherDetailPage() {
     const getRequirementLabel = (req: NonNullable<TeacherDetail["registrationRequirements"]>[number]) => {
         const localized = locale === "ar" ? req.nameAr : req.nameEn
         return localized || systemCodeLabels[req.code] || req.code
+    }
+
+    // Map each uploaded document to the requirement it satisfies (via teacherDocumentId),
+    // so we can show a meaningful name even for custom requirements.
+    const requirementByDocId = React.useMemo(() => {
+        const map = new Map<number, NonNullable<TeacherDetail["registrationRequirements"]>[number]>()
+        teacher?.registrationRequirements?.forEach((req) => {
+            if (req.teacherDocumentId != null) map.set(req.teacherDocumentId, req)
+        })
+        return map
+    }, [teacher?.registrationRequirements])
+
+    const getDocumentName = (doc: TeacherDetail["documents"][number]) => {
+        const req = requirementByDocId.get(doc.id)
+        return req ? getRequirementLabel(req) : getDocumentTypeName(doc.documentType)
+    }
+
+    // A real uploaded file has a path (slash or extension). The backend stores
+    // sentinels like "pending-upload" when no file exists yet — don't link those.
+    const getDocumentFileUrl = (filePath: string | null | undefined) => {
+        if (!filePath) return null
+        const looksLikePath = filePath.includes("/") || /\.[a-z0-9]+$/i.test(filePath)
+        if (!looksLikePath) return null
+        const base = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "")
+        return `${base}/${filePath.replace(/^\/+/, "")}`
     }
 
     // Status here is the string form ("Pending" | "Approved" | "Rejected") used by the checklist.
@@ -510,10 +499,9 @@ export default function TeacherDetailPage() {
     }
 
     const confirmBlockTeacher = () => {
-        // // API call: POST /api/teachers/{teacherId}/block
-        // console.log("[v0] Blocking teacher:", teacherId)
-        blockTeacher({ teacherId: Number(teacherId) })
+        blockTeacher({ teacherId: Number(teacherId), reason: blockReason })
         setBlockDialogOpen(false)
+        setBlockReason("")
     }
 
     return (
@@ -534,7 +522,7 @@ export default function TeacherDetailPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {teacher?.status !== 5 ? (
+                        {teacher?.status !== TEACHER_STATUS.Blocked && (
                             <Button
                                 variant="destructive"
                                 size="sm"
@@ -542,11 +530,6 @@ export default function TeacherDetailPage() {
                             >
                                 <IconBan className="h-4 w-4 me-2" />
                                 {t("teachers.blockTeacher")}
-                            </Button>
-                        ) : (
-                            <Button variant="outline" size="sm" className="text-success border-success hover:bg-success/10 bg-transparent">
-                                <IconCheck className="h-4 w-4 me-2" />
-                                {t("teachers.unblockTeacher")}
                             </Button>
                         )}
                     </div>
@@ -600,7 +583,10 @@ export default function TeacherDetailPage() {
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs text-muted-foreground">{t("teachers.location")}</p>
                                         <p className="text-sm font-medium">
-                                            {locationNames[teacher?.location || 0]?.[locale] || teacher?.location}
+                                            {(() => {
+                                                const key = locationLabelKey(teacher?.location ?? null)
+                                                return key ? t(key) : (teacher?.location ?? "—")
+                                            })()}
                                         </p>
                                     </div>
                                 </div>
@@ -709,7 +695,7 @@ export default function TeacherDetailPage() {
                                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                                                 <div className="flex items-start gap-4">
                                                     <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted shrink-0">
-                                                        {doc.documentType === 1 ? (
+                                                        {doc.documentType === 1 || requirementByDocId.get(doc.id)?.code === "identity_document" ? (
                                                             <IconShield className="h-6 w-6 text-muted-foreground" />
                                                         ) : (
                                                             <IconFileText className="h-6 w-6 text-muted-foreground" />
@@ -717,7 +703,7 @@ export default function TeacherDetailPage() {
                                                     </div>
                                                     <div className="space-y-1">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <h4 className="font-medium">{getDocumentTypeName(doc.documentType)}</h4>
+                                                            <h4 className="font-medium">{getDocumentName(doc)}</h4>
                                                             {getVerificationBadge(doc.verificationStatus)}
                                                         </div>
 
@@ -786,15 +772,25 @@ export default function TeacherDetailPage() {
 
                                                 {/* Actions */}
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <a
-                                                        href={`${process.env.NEXT_PUBLIC_API_URL}/${doc.filePath}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                                                    >
-                                                        <IconExternalLink className="h-4 w-4 me-2" />
-                                                        {t("teachers.viewDocument")}
-                                                    </a>
+                                                    {(() => {
+                                                        const fileUrl = getDocumentFileUrl(doc.filePath)
+                                                        return fileUrl ? (
+                                                            <a
+                                                                href={fileUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                                                            >
+                                                                <IconExternalLink className="h-4 w-4 me-2" />
+                                                                {t("teachers.viewDocument")}
+                                                            </a>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                                                <IconAlertCircle className="h-4 w-4" />
+                                                                {t("teachers.fileNotUploaded")}
+                                                            </span>
+                                                        )
+                                                    })()}
                                                     {doc.verificationStatus === 1 && (
                                                         <>
                                                             <Button
@@ -855,7 +851,13 @@ export default function TeacherDetailPage() {
             </div>
 
             {/* Block Teacher Dialog */}
-            <AlertDialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
+            <AlertDialog
+                open={blockDialogOpen}
+                onOpenChange={(open) => {
+                    setBlockDialogOpen(open)
+                    if (!open) setBlockReason("")
+                }}
+            >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>{t("teachers.blockTeacher")}</AlertDialogTitle>
@@ -866,6 +868,18 @@ export default function TeacherDetailPage() {
                             </span>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="blockReason">{t("teachers.blockReason")}</Label>
+                        <Textarea
+                            id="blockReason"
+                            placeholder={t("teachers.blockReasonPlaceholder")}
+                            value={blockReason}
+                            onChange={(e) => setBlockReason(e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                        />
+                        <p className="text-xs text-muted-foreground text-end">{blockReason.length}/500</p>
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                         <AlertDialogAction
@@ -917,7 +931,9 @@ export default function TeacherDetailPage() {
                                 value={rejectionReason}
                                 onChange={(e) => setRejectionReason(e.target.value)}
                                 rows={4}
+                                maxLength={500}
                             />
+                            <p className="text-xs text-muted-foreground text-end">{rejectionReason.length}/500</p>
                         </div>
                     </div>
                     <DialogFooter>

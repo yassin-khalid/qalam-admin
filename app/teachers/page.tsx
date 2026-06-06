@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { IconSearch, IconDots, IconEye, IconBan, IconCheck, IconRefresh } from "@tabler/icons-react"
+import { IconSearch, IconDots, IconEye, IconBan, IconRefresh } from "@tabler/icons-react"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +30,8 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { useLocale } from "@/lib/locale-context"
 import {
     AlertDialog,
@@ -46,72 +48,7 @@ import { PendingTeacher, teacherColllection } from "@/collections/teachers"
 import { useMutation } from "@tanstack/react-query"
 import { ApiResponse } from "@/types/ApiResponse"
 import { queryClient } from "@/lib/utils"
-
-// Mock data for teachers
-const mockTeachers = [
-    {
-        teacherId: 1,
-        userId: 2,
-        fullName: "Ahmed Al-Farsi",
-        phoneNumber: "+966554709484",
-        email: "ahmed.alfarsi@qalam.com",
-        status: 1, // 1: Pending, 2: Active, 3: Blocked
-        location: 1,
-        createdAt: "2026-01-29T03:16:58.38936",
-        totalDocuments: 2,
-        pendingDocuments: 1,
-        approvedDocuments: 1,
-        rejectedDocuments: 0,
-    },
-    {
-        teacherId: 2,
-        userId: 3,
-        fullName: "Sara Mohammed",
-        phoneNumber: "+966501234567",
-        email: "sara.mohammed@qalam.com",
-        status: 2,
-        location: 2,
-        createdAt: "2026-01-28T10:30:00.000",
-        totalDocuments: 3,
-        pendingDocuments: 0,
-        approvedDocuments: 3,
-        rejectedDocuments: 0,
-    },
-    {
-        teacherId: 3,
-        userId: 4,
-        fullName: "Khalid Hassan",
-        phoneNumber: "+966509876543",
-        email: "khalid.hassan@qalam.com",
-        status: 3,
-        location: 1,
-        createdAt: "2026-01-27T15:45:00.000",
-        totalDocuments: 2,
-        pendingDocuments: 0,
-        approvedDocuments: 1,
-        rejectedDocuments: 1,
-    },
-    {
-        teacherId: 4,
-        userId: 5,
-        fullName: "Fatima Al-Rashid",
-        phoneNumber: "+966512345678",
-        email: "fatima.alrashid@qalam.com",
-        status: 1,
-        location: 3,
-        createdAt: "2026-01-26T09:00:00.000",
-        totalDocuments: 2,
-        pendingDocuments: 2,
-        approvedDocuments: 0,
-        rejectedDocuments: 0,
-    },
-]
-
-const locationNames: Record<number, { en: string; ar: string }> = {
-    1: { en: "Riyadh", ar: "الرياض" },
-    2: { en: "Jeddah", ar: "جدة" },
-    3: { en: "Dammam", ar: "الدمام" },
-}
+import { TEACHER_STATUS, locationLabelKey } from "@/lib/teacher-status"
 
 export default function TeachersPage() {
     const { t, locale, direction } = useLocale()
@@ -119,17 +56,9 @@ export default function TeachersPage() {
     const [searchQuery, setSearchQuery] = React.useState("")
     const [statusFilter, setStatusFilter] = React.useState<string>("all")
     const [blockDialogOpen, setBlockDialogOpen] = React.useState(false)
-    const [selectedTeacher, setSelectedTeacher] = React.useState<typeof mockTeachers[0] | null>(null)
+    const [selectedTeacher, setSelectedTeacher] = React.useState<PendingTeacher | null>(null)
+    const [blockReason, setBlockReason] = React.useState("")
 
-    // const filteredTeachers = mockTeachers.filter((teacher) => {
-    //     const matchesSearch =
-    //         teacher.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    //         teacher.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    //         teacher.phoneNumber.includes(searchQuery)
-    //     const matchesStatus =
-    //         statusFilter === "all" || teacher.status === parseInt(statusFilter)
-    //     return matchesSearch && matchesStatus
-    // })
     const { data: teachers } = useLiveQuery(q => q.from({ teachers: teacherColllection }))
 
     // TeacherStatus: 1 AwaitingDocuments, 2 PendingVerification, 3 DocumentsRejected, 4 Active, 5 Blocked
@@ -147,8 +76,9 @@ export default function TeachersPage() {
     }, [teachers, searchQuery, statusFilter])
 
     const { mutate: blockTeacher } = useMutation({
-        mutationFn: async ({ teacherId }: { teacherId: number }) => {
+        mutationFn: async ({ teacherId, reason }: { teacherId: number, reason?: string }) => {
             const access_token = localStorage.getItem('access_token');
+            const trimmedReason = reason?.trim();
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Block`, {
                 method: 'POST',
                 headers: {
@@ -157,6 +87,8 @@ export default function TeachersPage() {
                     'Accept': 'application/json',
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                 },
+                // reason is optional (max 500); omit when empty.
+                body: JSON.stringify({ reason: trimmedReason || undefined }),
             });
             const data = await response.json() as ApiResponse<null>
             if (!data.succeeded) {
@@ -172,7 +104,7 @@ export default function TeachersPage() {
                     if (!old) return [];
                     return old.map((teacher) => {
                         if (teacher.teacherId === teacherId) {
-                            return { ...teacher, status: 5 }
+                            return { ...teacher, status: TEACHER_STATUS.Blocked }
                         }
                         return teacher;
                     });
@@ -227,7 +159,7 @@ export default function TeachersPage() {
         }
     }
 
-    const handleBlockTeacher = (teacher: typeof mockTeachers[0]) => {
+    const handleBlockTeacher = (teacher: PendingTeacher) => {
         setSelectedTeacher(teacher)
         setBlockDialogOpen(true)
     }
@@ -236,9 +168,10 @@ export default function TeachersPage() {
         // // In a real app, this would call the API: POST /api/teachers/{teacherId}/block
         // console.log("[v0] Blocking teacher:", selectedTeacher?.teacherId)
         if (!selectedTeacher) return;
-        blockTeacher({ teacherId: selectedTeacher?.teacherId })
+        blockTeacher({ teacherId: selectedTeacher?.teacherId, reason: blockReason })
         setBlockDialogOpen(false)
         setSelectedTeacher(null)
+        setBlockReason("")
     }
 
     return (
@@ -350,7 +283,10 @@ export default function TeachersPage() {
                                             <TableCell>{teacher.email}</TableCell>
                                             <TableCell dir="ltr" className={direction === "rtl" ? "text-right" : ""}>{teacher.phoneNumber}</TableCell>
                                             <TableCell>
-                                                {locationNames[teacher.location]?.[locale] || teacher.location}
+                                                {(() => {
+                                                    const key = locationLabelKey(teacher.location)
+                                                    return key ? t(key) : (teacher.location ?? "—")
+                                                })()}
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex items-center justify-center gap-2 text-xs">
@@ -392,20 +328,17 @@ export default function TeachersPage() {
                                                             <IconEye className="h-4 w-4" />
                                                             {t("teachers.viewDetails")}
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuSeparator />
-                                                        {teacher.status !== 5 ? (
-                                                            <DropdownMenuItem
-                                                                className="text-destructive"
-                                                                onClick={() => handleBlockTeacher(teacher)}
-                                                            >
-                                                                <IconBan className="h-4 w-4 me-2" />
-                                                                {t("teachers.blockTeacher")}
-                                                            </DropdownMenuItem>
-                                                        ) : (
-                                                            <DropdownMenuItem className="text-success">
-                                                                <IconCheck className="h-4 w-4 me-2" />
-                                                                {t("teachers.unblockTeacher")}
-                                                            </DropdownMenuItem>
+                                                        {teacher.status !== TEACHER_STATUS.Blocked && (
+                                                            <>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    className="text-destructive"
+                                                                    onClick={() => handleBlockTeacher(teacher)}
+                                                                >
+                                                                    <IconBan className="h-4 w-4 me-2" />
+                                                                    {t("teachers.blockTeacher")}
+                                                                </DropdownMenuItem>
+                                                            </>
                                                         )}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
@@ -420,7 +353,13 @@ export default function TeachersPage() {
             </div>
 
             {/* Block Teacher Dialog */}
-            <AlertDialog open={blockDialogOpen} onOpenChange={setBlockDialogOpen}>
+            <AlertDialog
+                open={blockDialogOpen}
+                onOpenChange={(open) => {
+                    setBlockDialogOpen(open)
+                    if (!open) setBlockReason("")
+                }}
+            >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>{t("teachers.blockTeacher")}</AlertDialogTitle>
@@ -433,6 +372,18 @@ export default function TeachersPage() {
                             )}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="blockReason">{t("teachers.blockReason")}</Label>
+                        <Textarea
+                            id="blockReason"
+                            placeholder={t("teachers.blockReasonPlaceholder")}
+                            value={blockReason}
+                            onChange={(e) => setBlockReason(e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                        />
+                        <p className="text-xs text-muted-foreground text-end">{blockReason.length}/500</p>
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                         <AlertDialogAction

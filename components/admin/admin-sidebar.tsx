@@ -354,14 +354,14 @@ export function AdminSidebar() {
                     <DropdownMenuTrigger render={(props) => <button {...props} />}>
                         <button className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-sidebar-accent">
                             <Avatar className="h-8 w-8">
-                                <AvatarImage src="/placeholder-avatar.jpg" alt={user?.firstName || "Admin"} />
+                                <AvatarImage src="/placeholder-avatar.jpg" alt={user?.fullName || "Admin"} />
                                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                                    {user?.firstName?.[0]}{user?.lastName?.[0] || "A"}
+                                    {user?.fullName?.[0] || "A"}
                                 </AvatarFallback>
                             </Avatar>
                             <div className="flex-1 overflow-hidden">
                                 <p className="truncate text-sm font-medium text-foreground">
-                                    {user ? `${user.firstName} ${user.lastName}` : t("user.adminUser")}
+                                    {user ? user.fullName : t("user.adminUser")}
                                 </p>
                                 <p className="truncate text-xs text-muted-foreground">{user?.email || "admin@eduadmin.com"}</p>
                             </div>
