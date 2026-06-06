@@ -139,7 +139,7 @@ export default function TeacherDetailPage() {
         userId: number,
         fullName: string,
         phoneNumber: string,
-        email: "test@qalam.com",
+        email: string,
         bio: string | null,
         status: number,
         location: number,
@@ -164,6 +164,17 @@ export default function TeacherDetailPage() {
         approvedDocuments: number,
         rejectedDocuments: number,
         canBeActivated: boolean
+        registrationRequirements?: {
+            code: string
+            nameEn?: string | null
+            nameAr?: string | null
+            requirementType?: string | null
+            isRequired: boolean
+            isSubmitted: boolean
+            verificationStatus: string | null
+            rejectionReason?: string | null
+            teacherDocumentId?: number | null
+        }[]
     }
 
     const { data: teacher } = useQuery({
@@ -394,6 +405,52 @@ export default function TeacherDetailPage() {
         }
     }
 
+    const systemCodeLabels: Record<string, string> = {
+        identity_document: t("teachers.identityDocument"),
+        certificate: t("teachers.certificate"),
+        bio: t("teachers.bio"),
+        location: t("teachers.location"),
+    }
+
+    const getRequirementLabel = (req: NonNullable<TeacherDetail["registrationRequirements"]>[number]) => {
+        const localized = locale === "ar" ? req.nameAr : req.nameEn
+        return localized || systemCodeLabels[req.code] || req.code
+    }
+
+    // Status here is the string form ("Pending" | "Approved" | "Rejected") used by the checklist.
+    const getRequirementStatusBadge = (req: NonNullable<TeacherDetail["registrationRequirements"]>[number]) => {
+        if (!req.isSubmitted) {
+            return (
+                <Badge variant="outline" className="border-muted-foreground/40 text-muted-foreground bg-muted">
+                    {t("treq.notSubmitted")}
+                </Badge>
+            )
+        }
+        switch (req.verificationStatus) {
+            case "Approved":
+                return (
+                    <Badge variant="outline" className="border-success text-success bg-success/10">
+                        <IconCheck className="h-3 w-3 me-1" />
+                        {t("teachers.approved")}
+                    </Badge>
+                )
+            case "Rejected":
+                return (
+                    <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
+                        <IconX className="h-3 w-3 me-1" />
+                        {t("teachers.rejected")}
+                    </Badge>
+                )
+            default:
+                return (
+                    <Badge variant="outline" className="border-warning text-warning bg-warning/10">
+                        <IconClock className="h-3 w-3 me-1" />
+                        {t("teachers.pending")}
+                    </Badge>
+                )
+        }
+    }
+
     const handleApproveDocument = (doc: TeacherDetail['documents'][0]) => {
         setSelectedDocument(doc)
         setApproveDialogOpen(true)
@@ -577,8 +634,40 @@ export default function TeacherDetailPage() {
                         </CardContent>
                     </Card>
 
+                    {/* Right column: registration checklist + documents */}
+                    <div className="lg:col-span-2 space-y-6">
+                    {/* Registration Requirements Checklist */}
+                    {teacher?.registrationRequirements && teacher.registrationRequirements.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>{t("treq.checklistTitle")}</CardTitle>
+                                <CardDescription className="mt-1">{t("treq.checklistSubtitle")}</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {teacher.registrationRequirements.map((req) => (
+                                    <div
+                                        key={req.code}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="font-medium text-foreground truncate">
+                                                {getRequirementLabel(req)}
+                                            </span>
+                                            {req.isRequired && (
+                                                <Badge variant="outline" className="border-primary text-primary bg-primary/10 shrink-0">
+                                                    {t("treq.required")}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        {getRequirementStatusBadge(req)}
+                                    </div>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {/* Documents Section */}
-                    <Card className="lg:col-span-2">
+                    <Card>
                         <CardHeader>
                             <div className="flex items-center justify-between">
                                 <div>
@@ -761,6 +850,7 @@ export default function TeacherDetailPage() {
                             </Card>
                         </CardContent>
                     </Card>
+                    </div>
                 </div>
             </div>
 

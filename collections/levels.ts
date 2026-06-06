@@ -27,7 +27,7 @@ export const levelCollection = createCollection(queryCollectionOptions({
             throw new Error('Failed to fetch levels')
         }
         const data: ApiResponse<PaginatedResult<EducationLevelItem>> = await response.json()
-        return data.data.items
+        return data.data!.items
     },
     queryClient,
     getKey: (item) => item.id,

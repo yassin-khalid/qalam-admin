@@ -206,7 +206,8 @@ import {
     IconLogout,
     IconUser,
     IconUsers,
-    IconHierarchy
+    IconHierarchy,
+    IconClipboardList
 } from "@tabler/icons-react"
 import {
     Sidebar,
@@ -283,6 +284,11 @@ const navigationItems = [
         titleKey: "nav.teachers",
         icon: IconUsers,
         href: "/teachers",
+    },
+    {
+        titleKey: "nav.teacherRequirements",
+        icon: IconClipboardList,
+        href: "/teacher-requirements",
     },
 ]
 

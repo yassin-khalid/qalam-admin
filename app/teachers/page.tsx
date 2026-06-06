@@ -132,6 +132,20 @@ export default function TeachersPage() {
     // })
     const { data: teachers } = useLiveQuery(q => q.from({ teachers: teacherColllection }))
 
+    // TeacherStatus: 1 AwaitingDocuments, 2 PendingVerification, 3 DocumentsRejected, 4 Active, 5 Blocked
+    const filteredTeachers = React.useMemo(() => {
+        const query = searchQuery.trim().toLowerCase()
+        return (teachers ?? []).filter((teacher) => {
+            const matchesSearch =
+                !query ||
+                teacher.fullName?.toLowerCase().includes(query) ||
+                teacher.email?.toLowerCase().includes(query) ||
+                teacher.phoneNumber?.includes(searchQuery.trim())
+            const matchesStatus = statusFilter === "all" || teacher.status === Number(statusFilter)
+            return matchesSearch && matchesStatus
+        })
+    }, [teachers, searchQuery, statusFilter])
+
     const { mutate: blockTeacher } = useMutation({
         mutationFn: async ({ teacherId }: { teacherId: number }) => {
             const access_token = localStorage.getItem('access_token');
@@ -247,14 +261,14 @@ export default function TeachersPage() {
                     <Card>
                         <CardHeader className="pb-2">
                             <CardDescription>{t("common.all")}</CardDescription>
-                            <CardTitle className="text-2xl">{mockTeachers.length}</CardTitle>
+                            <CardTitle className="text-2xl">{teachers?.length ?? 0}</CardTitle>
                         </CardHeader>
                     </Card>
                     <Card>
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.pending")}</CardDescription>
                             <CardTitle className="text-2xl text-warning">
-                                {mockTeachers.filter((t) => t.status === 1).length}
+                                {teachers?.filter((teacher) => teacher.status === 2).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -262,7 +276,7 @@ export default function TeachersPage() {
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.active")}</CardDescription>
                             <CardTitle className="text-2xl text-success">
-                                {mockTeachers.filter((t) => t.status === 2).length}
+                                {teachers?.filter((teacher) => teacher.status === 4).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -270,7 +284,7 @@ export default function TeachersPage() {
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.blocked")}</CardDescription>
                             <CardTitle className="text-2xl text-destructive">
-                                {mockTeachers.filter((t) => t.status === 3).length}
+                                {teachers?.filter((teacher) => teacher.status === 5).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -295,9 +309,11 @@ export default function TeachersPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">{t("common.all")}</SelectItem>
-                                    <SelectItem value="1">{t("teachers.pending")}</SelectItem>
-                                    <SelectItem value="2">{t("teachers.active")}</SelectItem>
-                                    <SelectItem value="3">{t("teachers.blocked")}</SelectItem>
+                                    <SelectItem value="1">{t("teachers.awaiting")}</SelectItem>
+                                    <SelectItem value="2">{t("teachers.pending")}</SelectItem>
+                                    <SelectItem value="3">{t("teachers.rejected")}</SelectItem>
+                                    <SelectItem value="4">{t("teachers.active")}</SelectItem>
+                                    <SelectItem value="5">{t("teachers.blocked")}</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -321,14 +337,14 @@ export default function TeachersPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {teachers?.length === 0 ? (
+                                {filteredTeachers.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                                             {t("common.noData")}
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    teachers?.map((teacher) => (
+                                    filteredTeachers.map((teacher) => (
                                         <TableRow key={teacher.teacherId}>
                                             <TableCell className="font-medium">{teacher.fullName}</TableCell>
                                             <TableCell>{teacher.email}</TableCell>

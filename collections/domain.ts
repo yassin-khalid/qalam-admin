@@ -64,8 +64,9 @@ export const domainCollection = createCollection(queryCollectionOptions({
         if (!response.ok) {
             throw new Error('Failed to fetch domains')
         }
-        const data: ApiResponse<PaginatedResult<EducationDomainItem>> = await response.json()
-        return data.data.items
+        const data: ApiResponse<PaginatedResult<EducationDomainItem> | EducationDomainItem[]> = await response.json()
+        // Tolerate both a direct array and a paginated { items: [...] } envelope.
+        return Array.isArray(data.data) ? data.data : data.data?.items ?? []
     },
     queryClient,
     getKey: (item) => item.id,

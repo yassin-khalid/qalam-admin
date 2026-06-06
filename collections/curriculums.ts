@@ -29,7 +29,7 @@ export const curriculumCollection = createCollection(queryCollectionOptions({
             throw new Error('Failed to fetch curriculums')
         }
         const data: ApiResponse<PaginatedResult<EducationCurriculumItem>> = await response.json()
-        return data.data.items
+        return data.data!.items
     },
     queryClient,
     getKey: (item) => item.id,

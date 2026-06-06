@@ -27,7 +27,7 @@ export const gradeCollection = createCollection(queryCollectionOptions({
             throw new Error('Failed to fetch grades')
         }
         const data: ApiResponse<PaginatedResult<EducationGradeItem>> = await response.json()
-        return data.data.items
+        return data.data!.items
     },
     queryClient,
     getKey: (item) => item.id,

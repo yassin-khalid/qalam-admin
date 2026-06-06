@@ -29,7 +29,7 @@ export const subjectCollection = createCollection(queryCollectionOptions({
             throw new Error('Failed to fetch subjects')
         }
         const data: ApiResponse<PaginatedResult<SubjectItem>> = await response.json()
-        return data.data.items
+        return data.data!.items
     },
     queryClient,
     getKey: (item) => item.id,

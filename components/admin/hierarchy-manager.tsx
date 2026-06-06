@@ -6,35 +6,27 @@ import {
   IconBook,
   IconSchool,
   IconStack,
-  IconFolderOpen,
   IconCalendar,
   IconBookmark,
   IconPlus,
   IconSearch,
   IconChevronRight,
-  IconChevronDown,
-  IconChevronLeft,
-  IconDots,
   IconEdit,
   IconTrash,
   IconRefresh,
   IconSparkles,
-  IconX,
   IconCheck,
   IconAlertCircle,
-  IconLoader2,
   IconFolder,
   IconSquareCheck,
   IconSquare,
-  IconArrowRight,
-  IconArrowsLeftRight,
 } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 import { useLocale } from "@/lib/locale-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -43,13 +35,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Select,
   SelectContent,
@@ -67,7 +52,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { ApiResponse } from "@/types/ApiResponse"
+import { ApiResponse, PaginatedResult } from "@/types/ApiResponse"
 import { EducationDomainItem } from "@/collections/domain"
 import { toast } from "sonner"
 
@@ -86,7 +71,7 @@ interface Domain {
   nameEn: string
   nameAr: string
   code: string
-  isActive: boolean
+  isActive?: boolean
 }
 
 interface FilterState {
@@ -106,6 +91,10 @@ interface HierarchyData {
     hasGrade: boolean
     hasAcademicTerm: boolean
     hasContentUnits: boolean
+    hasLessons?: boolean
+    requiresQuranContentType?: boolean
+    requiresQuranLevel?: boolean
+    requiresUnitTypeSelection?: boolean
   }
   nextStep: string
   options: Option[]
@@ -114,6 +103,10 @@ interface HierarchyData {
   pageNumber: number | null
   pageSize: number | null
   totalPages: number | null
+  // Quran-only fields (preserved, not dropped)
+  subject?: Option | null
+  contentTypes?: Option[] | null
+  levels?: Option[] | null
 }
 
 interface LevelConfig {
@@ -218,13 +211,6 @@ const getParentLevel = (level: HierarchyLevel): HierarchyLevel | null => {
   return index > 0 ? hierarchy[index - 1] : null
 }
 
-// Get the hierarchy chain up to a level (for building params)
-const getHierarchyChain = (level: HierarchyLevel): HierarchyLevel[] => {
-  const hierarchy: HierarchyLevel[] = ["Domain", "Curriculum", "Level", "Grade", "Subject", "Term", "Unit"]
-  const index = hierarchy.indexOf(level)
-  return hierarchy.slice(0, index)
-}
-
 // Build query string from params - accumulative (DomainId is always required)
 function buildFilterQueryString(params: FilterParams): string {
   const searchParams = new URLSearchParams()
@@ -236,27 +222,35 @@ function buildFilterQueryString(params: FilterParams): string {
   if (params.CurriculumId) searchParams.set("CurriculumId", params.CurriculumId.toString())
   if (params.LevelId) searchParams.set("LevelId", params.LevelId.toString())
   if (params.GradeId) searchParams.set("GradeId", params.GradeId.toString())
-  if (params.TermIds) params.TermIds.forEach(termId => searchParams.set("TermIds", termId.toString()))
+  if (params.TermIds) params.TermIds.forEach(termId => searchParams.append("TermIds", termId.toString()))
   if (params.SubjectId) searchParams.set("SubjectId", params.SubjectId.toString())
+
+  // Quran-specific params (ignored by the API for non-Quran domains)
+  if (params.UnitTypeCode) searchParams.set("UnitTypeCode", params.UnitTypeCode)
+  if (params.PageNumber) searchParams.set("PageNumber", params.PageNumber.toString())
+  if (params.PageSize) searchParams.set("PageSize", params.PageSize.toString())
 
   return `?${searchParams.toString()}`
 }
-// ==================== MOCK API FUNCTIONS ====================
-// These simulate real API calls and should be replaced with actual API endpoints
+// ==================== API FUNCTIONS ====================
 
-async function fetchDomains(): Promise<{ data: { items: EducationDomainItem[] } }> {
+async function fetchDomains(): Promise<{ data: { items: Domain[] } }> {
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Education/Domains`, {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${localStorage.getItem('access_token')}`
     }
   })
-  const json: ApiResponse<EducationDomainItem[]> = await response.json()
-  if (!json.succeeded) {
+  const json: ApiResponse<PaginatedResult<EducationDomainItem> | EducationDomainItem[]> = await response.json()
+  if (!json.succeeded || !json.data) {
     return { data: { items: [] } }
   }
-  return { data: { items: json.data.items } }
+  // Tolerate both a direct array and a paginated { items: [...] } envelope.
+  const items = Array.isArray(json.data) ? json.data : json.data.items ?? []
+  return { data: { items: items as Domain[] } }
 }
+
+type UnitTypeCode = "QuranPart" | "QuranSurah"
 
 interface FilterParams {
   DomainId: number
@@ -265,52 +259,10 @@ interface FilterParams {
   GradeId?: number
   SubjectId?: number
   TermIds?: number[]
-}
-
-// Fetch available parents for moving an item
-async function fetchParentOptions(level: HierarchyLevel, currentBreadcrumb: BreadcrumbItem[], domainId: number): Promise<Option[]> {
-  await new Promise(r => setTimeout(r, 400))
-
-  // Return mock parent options based on the level we want to move to
-  const parentLevel = getParentLevel(level)
-  if (!parentLevel) return []
-
-  // Mock data for different parent levels
-  const mockParents: Record<HierarchyLevel, Option[]> = {
-    Domain: [],
-    Curriculum: [
-      { id: 1, nameAr: "المنهج السعودي", nameEn: "Saudi Curriculum", code: null },
-      { id: 2, nameAr: "المنهج المصري", nameEn: "Egyptian Curriculum", code: null },
-      { id: 3, nameAr: "المنهج الأمريكي", nameEn: "American Curriculum", code: null },
-    ],
-    Level: [
-      { id: 1, nameAr: "المرحلة الابتدائية", nameEn: "Elementary", code: null },
-      { id: 2, nameAr: "المرحلة المتوسطة", nameEn: "Intermediate", code: null },
-      { id: 3, nameAr: "المرحلة الثانوية", nameEn: "Secondary", code: null },
-    ],
-    Grade: [
-      { id: 1, nameAr: "الصف الأول الابتدائي", nameEn: "First Grade", code: null },
-      { id: 2, nameAr: "الصف الثاني الابتدائي", nameEn: "Second Grade", code: null },
-      { id: 3, nameAr: "الصف الثالث الابتدائي", nameEn: "Third Grade", code: null },
-      { id: 4, nameAr: "الصف الرابع الابتدائي", nameEn: "Fourth Grade", code: null },
-      { id: 5, nameAr: "الصف الخامس الابتدائي", nameEn: "Fifth Grade", code: null },
-      { id: 6, nameAr: "الصف السادس الابتدائي", nameEn: "Sixth Grade", code: null },
-    ],
-    Subject: [
-      { id: 1, nameAr: "اللغة العربية", nameEn: "Arabic Language", code: null },
-      { id: 2, nameAr: "التربية الإسلامية", nameEn: "Islamic Education", code: null },
-      { id: 3, nameAr: "الرياضيات", nameEn: "Mathematics", code: null },
-      { id: 4, nameAr: "العلوم", nameEn: "Science", code: null },
-    ],
-    Term: [
-      { id: 1, nameAr: "الفصل الدراسي الأول", nameEn: "First Term", code: null },
-      { id: 2, nameAr: "الفصل الدراسي الثاني", nameEn: "Second Term", code: null },
-      { id: 3, nameAr: "الفصل الدراسي الثالث", nameEn: "Third Term", code: null },
-    ],
-    Unit: [],
-  }
-
-  return mockParents[parentLevel] || []
+  // Quran-only (ignored by the API for other domains)
+  UnitTypeCode?: UnitTypeCode
+  PageNumber?: number
+  PageSize?: number
 }
 
 async function fetchHierarchy(params: FilterParams): Promise<{ data: HierarchyData }> {
@@ -341,7 +293,7 @@ interface BreadcrumbItem {
 
 // ==================== MAIN COMPONENT ====================
 export function HierarchyManager() {
-  const { locale, t, direction } = useLocale()
+  const { locale, direction } = useLocale()
 
   // State
   const [domains, setDomains] = React.useState<Domain[]>([])
@@ -354,24 +306,22 @@ export function HierarchyManager() {
   const [isTermSelectMode, setIsTermSelectMode] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
 
+  // Quran-specific state (Quran lists units directly, paginated, split by unit type)
+  const [quranUnitType, setQuranUnitType] = React.useState<UnitTypeCode>("QuranPart")
+  const [pageNumber, setPageNumber] = React.useState(1)
+  const isQuranDomain = selectedDomain?.code === "quran"
+
   // Dialogs
   const [showAddDialog, setShowAddDialog] = React.useState(false)
   const [showEditDialog, setShowEditDialog] = React.useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
-  const [showMoveDialog, setShowMoveDialog] = React.useState(false)
   const [selectedItem, setSelectedItem] = React.useState<Option | null>(null)
   const [addLevel, setAddLevel] = React.useState<HierarchyLevel>("Domain")
-  const [moveItemLevel, setMoveItemLevel] = React.useState<HierarchyLevel>("Curriculum")
 
   // Form state
   const [formNameEn, setFormNameEn] = React.useState("")
   const [formNameAr, setFormNameAr] = React.useState("")
   const [formIsActive, setFormIsActive] = React.useState(true)
-
-  // Move dialog state
-  const [moveParentOptions, setMoveParentOptions] = React.useState<Option[]>([])
-  const [selectedNewParentId, setSelectedNewParentId] = React.useState<number | null>(null)
-  const [loadingMoveOptions, setLoadingMoveOptions] = React.useState(false)
 
   // Load domains on mount
   React.useEffect(() => {
@@ -382,7 +332,7 @@ export function HierarchyManager() {
     setLoading(true)
     try {
       const response = await fetchDomains()
-      setDomains(response.data.items)
+      setDomains(response.data.items ?? [])
     } catch (error) {
       console.error("Failed to load domains:", error)
     } finally {
@@ -411,8 +361,13 @@ export function HierarchyManager() {
     }
   }, [])
 
-  // Build filter params from breadcrumb
-  const buildFilterParams = React.useCallback((items: BreadcrumbItem[], domain: Domain): FilterParams => {
+  // Build filter params from breadcrumb. For Quran, inject unit-type + pagination
+  // (overrides let callers pass fresh values without waiting on async state updates).
+  const buildFilterParams = (
+    items: BreadcrumbItem[],
+    domain: Domain,
+    quranOverrides?: { unitType?: UnitTypeCode; page?: number }
+  ): FilterParams => {
     const params: FilterParams = { DomainId: domain.id }
 
     for (const item of items) {
@@ -425,8 +380,14 @@ export function HierarchyManager() {
       }
     }
 
+    if (domain.code === "quran") {
+      params.UnitTypeCode = quranOverrides?.unitType ?? quranUnitType
+      params.PageNumber = quranOverrides?.page ?? pageNumber
+      params.PageSize = 20
+    }
+
     return params
-  }, [])
+  }
 
   // Handle domain selection
   const handleSelectDomain = (domain: Domain) => {
@@ -434,7 +395,24 @@ export function HierarchyManager() {
     setBreadcrumb([])
     setSelectedTerms([])
     setIsTermSelectMode(false)
-    loadHierarchy({ DomainId: domain.id })
+    setQuranUnitType("QuranPart")
+    setPageNumber(1)
+    loadHierarchy(buildFilterParams([], domain, { unitType: "QuranPart", page: 1 }))
+  }
+
+  // Quran: switch between Surahs (114) and Juz/Parts (30)
+  const handleQuranUnitTypeChange = (unitType: UnitTypeCode) => {
+    if (!selectedDomain) return
+    setQuranUnitType(unitType)
+    setPageNumber(1)
+    loadHierarchy(buildFilterParams(breadcrumb, selectedDomain, { unitType, page: 1 }))
+  }
+
+  // Quran: paginate the unit list
+  const handleQuranPageChange = (page: number) => {
+    if (!selectedDomain) return
+    setPageNumber(page)
+    loadHierarchy(buildFilterParams(breadcrumb, selectedDomain, { unitType: quranUnitType, page }))
   }
 
   // Handle option selection
@@ -495,7 +473,8 @@ export function HierarchyManager() {
       setBreadcrumb([])
       setSelectedTerms([])
       setIsTermSelectMode(false)
-      loadHierarchy({ DomainId: selectedDomain.id })
+      setPageNumber(1)
+      loadHierarchy(buildFilterParams([], selectedDomain, { unitType: quranUnitType, page: 1 }))
       return
     }
 
@@ -555,20 +534,8 @@ export function HierarchyManager() {
     setShowDeleteDialog(true)
   }
 
-  // Get parent ID from breadcrumb based on level
-  const getParentIdForLevel = (level: HierarchyLevel): number | null => {
-    const parentLevel = getParentLevel(level)
-    if (!parentLevel) return selectedDomain?.id || null
-
-    if (parentLevel === "Domain") return selectedDomain?.id || null
-
-    const parentItem = breadcrumb.find(b => b.level === parentLevel)
-    return parentItem?.id || null
-  }
-
   // Submit add form
   const submitAdd = async () => {
-    const parentId = getParentIdForLevel(addLevel)
     const parentLevel = getParentLevel(addLevel)
     let url = `${process.env.NEXT_PUBLIC_API_URL}`
 
@@ -818,60 +785,6 @@ export function HierarchyManager() {
     }
   }
 
-  // Handle move item - open dialog and load parent options
-  const handleMove = async (item: Option) => {
-    if (!hierarchyData || !selectedDomain) return
-
-    const currentLevel = hierarchyData.nextStep as HierarchyLevel
-    const parentLevel = getParentLevel(currentLevel)
-
-    // Can't move Domain or items without a parent level
-    if (!parentLevel || currentLevel === "Domain") return
-
-    setSelectedItem(item)
-    setMoveItemLevel(currentLevel)
-    setSelectedNewParentId(null)
-    setShowMoveDialog(true)
-    setLoadingMoveOptions(true)
-
-    try {
-      const options = await fetchParentOptions(currentLevel, breadcrumb, selectedDomain.id)
-      setMoveParentOptions(options)
-    } catch (error) {
-      console.error("Failed to load parent options:", error)
-    } finally {
-      setLoadingMoveOptions(false)
-    }
-  }
-
-  // Submit move
-  const submitMove = async () => {
-    if (!selectedItem || !selectedNewParentId) return
-
-    const parentLevel = getParentLevel(moveItemLevel)
-    if (!parentLevel) return
-
-    const parentKey = `${parentLevel.toLowerCase()}Id`
-
-    // Build payload - same item data, just new parent
-    const payload = {
-      id: selectedItem.id,
-      nameEn: selectedItem.nameEn,
-      nameAr: selectedItem.nameAr,
-      [parentKey]: selectedNewParentId,
-    }
-
-    // TODO: Call real API
-    console.log("Moving:", payload)
-    setShowMoveDialog(false)
-
-    // Refresh data
-    if (selectedDomain) {
-      const params = buildFilterParams(breadcrumb, selectedDomain)
-      loadHierarchy(params)
-    }
-  }
-
   // ==================== RENDER FUNCTIONS ====================
 
   // Render empty state (no domains)
@@ -927,7 +840,7 @@ export function HierarchyManager() {
               <SelectItem key={domain.id} value={locale === "ar" ? domain.nameAr : domain.nameEn}>
                 <div className="flex items-center gap-2">
                   <span>{locale === "ar" ? domain.nameAr : domain.nameEn}</span>
-                  {!domain.isActive && (
+                  {domain.isActive === false && (
                     <Badge variant="outline" className="text-xs">
                       {locale === "ar" ? "غير نشط" : "Inactive"}
                     </Badge>
@@ -1048,26 +961,6 @@ export function HierarchyManager() {
               <TooltipContent>{locale === "ar" ? "تعديل" : "Edit"}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          {/* Move button - only show for levels that have parents (not Domain) */}
-          {level !== "Domain" && level !== "Unit" && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-blue-500 hover:text-blue-600"
-                      onClick={(e) => { e.stopPropagation(); handleMove(option) }}
-                    >
-                      <IconArrowsLeftRight className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>{locale === "ar" ? "نقل إلى" : "Move to"}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger
@@ -1149,7 +1042,7 @@ export function HierarchyManager() {
             </div>
           </CardContent>
         </Card>
-      ) : domains.length === 0 ? (
+      ) : (domains?.length ?? 0) === 0 ? (
         <Card>
           <CardContent className="p-0">
             {renderEmptyState()}
@@ -1227,6 +1120,26 @@ export function HierarchyManager() {
                   </div>
                 )}
 
+                {/* Quran unit-type toggle (Surahs vs Juz) */}
+                {isQuranDomain && hierarchyData?.nextStep === "Unit" && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={quranUnitType === "QuranPart" ? "default" : "outline"}
+                      onClick={() => handleQuranUnitTypeChange("QuranPart")}
+                    >
+                      {locale === "ar" ? "الأجزاء (30)" : "Juz (30)"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={quranUnitType === "QuranSurah" ? "default" : "outline"}
+                      onClick={() => handleQuranUnitTypeChange("QuranSurah")}
+                    >
+                      {locale === "ar" ? "السور (114)" : "Surahs (114)"}
+                    </Button>
+                  </div>
+                )}
+
                 {/* Options list */}
                 {hierarchyLoading ? (
                   renderSkeleton()
@@ -1245,6 +1158,35 @@ export function HierarchyManager() {
                       )}
                     </div>
                   </ScrollArea>
+                )}
+
+                {/* Quran pagination (only meaningful for Quran units) */}
+                {isQuranDomain && hierarchyData?.nextStep === "Unit" && (hierarchyData?.totalPages ?? 1) > 1 && (
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={(hierarchyData?.pageNumber ?? pageNumber) <= 1 || hierarchyLoading}
+                      onClick={() => handleQuranPageChange((hierarchyData?.pageNumber ?? pageNumber) - 1)}
+                    >
+                      <IconChevronRight className="h-4 w-4 rotate-180 rtl:rotate-0" />
+                      {locale === "ar" ? "السابق" : "Previous"}
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {locale === "ar"
+                        ? `صفحة ${hierarchyData?.pageNumber ?? pageNumber} من ${hierarchyData?.totalPages ?? 1}`
+                        : `Page ${hierarchyData?.pageNumber ?? pageNumber} of ${hierarchyData?.totalPages ?? 1}`}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={(hierarchyData?.pageNumber ?? pageNumber) >= (hierarchyData?.totalPages ?? 1) || hierarchyLoading}
+                      onClick={() => handleQuranPageChange((hierarchyData?.pageNumber ?? pageNumber) + 1)}
+                    >
+                      {locale === "ar" ? "التالي" : "Next"}
+                      <IconChevronRight className="h-4 w-4 rtl:rotate-180" />
+                    </Button>
+                  </div>
                 )}
               </>
             ) : (
@@ -1379,132 +1321,6 @@ export function HierarchyManager() {
             </Button>
             <Button variant="destructive" onClick={submitDelete}>
               {locale === "ar" ? "حذف" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Move Dialog */}
-      <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <IconArrowsLeftRight className="h-5 w-5 text-blue-500" />
-              {locale === "ar" ? "نقل العنصر" : "Move Item"}
-            </DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? `اختر ${getConfig(getParentLevel(moveItemLevel) || "Domain").labelAr} الجديد لنقل هذا العنصر إليه`
-                : `Select a new ${getConfig(getParentLevel(moveItemLevel) || "Domain").labelEn} to move this item to`
-              }
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Current item info */}
-          {selectedItem && (
-            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50">
-              <div className="flex items-center gap-3">
-                {(() => {
-                  const config = getConfig(moveItemLevel)
-                  const Icon = config.icon
-                  return (
-                    <div className={cn("p-2 rounded-lg", config.bgColor)}>
-                      <Icon className={cn("h-5 w-5", config.color)} />
-                    </div>
-                  )
-                })()}
-                <div>
-                  <p className="font-semibold">{locale === "ar" ? selectedItem.nameAr : selectedItem.nameEn}</p>
-                  <p className="text-sm text-muted-foreground">{locale === "ar" ? selectedItem.nameEn : selectedItem.nameAr}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Parent selection */}
-          <div className="space-y-3">
-            <Label className="flex items-center gap-2">
-              <IconArrowRight className="h-4 w-4 text-muted-foreground" />
-              {locale === "ar"
-                ? `نقل إلى ${getConfig(getParentLevel(moveItemLevel) || "Domain").labelAr}:`
-                : `Move to ${getConfig(getParentLevel(moveItemLevel) || "Domain").labelEn}:`
-              }
-            </Label>
-
-            {loadingMoveOptions ? (
-              <div className="space-y-2">
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-                <Skeleton className="h-12 w-full rounded-lg" />
-              </div>
-            ) : (
-              <ScrollArea className="h-[200px] pr-2">
-                <div className="space-y-2">
-                  {moveParentOptions.map(parent => {
-                    const isSelected = selectedNewParentId === parent.id
-                    const parentConfig = getConfig(getParentLevel(moveItemLevel) || "Domain")
-                    const ParentIcon = parentConfig.icon
-
-                    return (
-                      <div
-                        key={parent.id}
-                        onClick={() => setSelectedNewParentId(parent.id)}
-                        className={cn(
-                          "flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all",
-                          isSelected
-                            ? "border-primary bg-primary/5"
-                            : "border-border/50 hover:border-primary/30 hover:bg-secondary/30"
-                        )}
-                      >
-                        <div className={cn(
-                          "p-2 rounded-lg transition-colors",
-                          isSelected ? "bg-primary/10" : parentConfig.bgColor
-                        )}>
-                          <ParentIcon className={cn(
-                            "h-4 w-4 transition-colors",
-                            isSelected ? "text-primary" : parentConfig.color
-                          )} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={cn(
-                            "font-medium truncate",
-                            isSelected && "text-primary"
-                          )}>
-                            {locale === "ar" ? parent.nameAr : parent.nameEn}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {locale === "ar" ? parent.nameEn : parent.nameAr}
-                          </p>
-                        </div>
-                        {isSelected && (
-                          <IconCheck className="h-5 w-5 text-primary shrink-0" />
-                        )}
-                      </div>
-                    )
-                  })}
-
-                  {moveParentOptions.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <IconAlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>{locale === "ar" ? "لا توجد خيارات متاحة" : "No options available"}</p>
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMoveDialog(false)}>
-              {locale === "ar" ? "إلغاء" : "Cancel"}
-            </Button>
-            <Button
-              onClick={submitMove}
-              disabled={!selectedNewParentId || loadingMoveOptions}
-              className="gap-2"
-            >
-              <IconArrowsLeftRight className="h-4 w-4" />
-              {locale === "ar" ? "نقل" : "Move"}
             </Button>
           </DialogFooter>
         </DialogContent>

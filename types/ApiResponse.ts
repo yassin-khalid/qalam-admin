@@ -23,3 +23,7 @@ export type PaginationMeta = {
   hasPreviousPage: boolean;
   hasNextPage: boolean;
 };
+
+export type PaginatedResult<T> = {
+  items: T[];
+} & PaginationMeta;

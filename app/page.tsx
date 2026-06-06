@@ -4,9 +4,7 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DashboardStats } from "@/components/admin/dashboard-stats"
 import { RecentActivity } from "@/components/admin/recent-activity"
 import { QuickActions } from "@/components/admin/quick-actions"
-// import { HierarchyTree } from "@/components/admin/hierarchy-tree"
 import { useLocale } from "@/lib/locale-context"
-// import { HierarchyFlow } from "@/components/admin/hierarchy-flow"
 
 export default function DashboardPage() {
   const { t } = useLocale()
@@ -35,9 +33,6 @@ export default function DashboardPage() {
             <QuickActions />
           </div>
         </div>
-
-        {/* <HierarchyTree /> */}
-        {/* <HierarchyFlow /> */}
       </div>
     </AdminLayout>
   )
