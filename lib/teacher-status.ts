@@ -30,6 +30,27 @@ export function normalizeTeacherStatus(value: string | number | null | undefined
     return 0
 }
 
+// Document review status (backend TeacherDocument.VerificationStatus enum): 1..3.
+// The API may return either the string name ("Pending"/"Approved"/"Rejected") or
+// the numeric code. UI compares against numbers, so normalize to the numeric code.
+export type VerificationStatusName = "Pending" | "Approved" | "Rejected"
+
+export const VERIFICATION_STATUS: Record<VerificationStatusName, number> = {
+    Pending: 1,
+    Approved: 2,
+    Rejected: 3,
+}
+
+export function normalizeVerificationStatus(value: string | number | null | undefined): number {
+    if (typeof value === "number") return value
+    if (typeof value === "string") {
+        if (value in VERIFICATION_STATUS) return VERIFICATION_STATUS[value as VerificationStatusName]
+        const asNumber = Number(value)
+        if (value.trim() !== "" && !Number.isNaN(asNumber)) return asNumber
+    }
+    return 0
+}
+
 export type LocationValue = "InsideSaudiArabia" | "OutsideSaudiArabia" | null
 
 // Tolerant to the string enum, a numeric enum (1 inside / 2 outside) and the

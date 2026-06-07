@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
 import { ApiResponse } from "@/types/ApiResponse"
 import {
     LocationValue,
@@ -55,6 +56,7 @@ import {
     locationLabelKey,
     normalizeLocation,
     normalizeTeacherStatus,
+    normalizeVerificationStatus,
 } from "@/lib/teacher-status"
 
 const identityTypeNames: Record<number, { en: string; ar: string }> = {
@@ -140,10 +142,14 @@ export default function TeacherDetailPage() {
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
                 },
             })
-            // status/location arrive as string enums (or numbers) — normalize to canonical.
-            type RawTeacherDetail = Omit<TeacherDetail, "status" | "location"> & {
+            // status/location/document verificationStatus arrive as string enums
+            // (or numbers) — normalize to the canonical numeric codes the UI expects.
+            type RawTeacherDetail = Omit<TeacherDetail, "status" | "location" | "documents"> & {
                 status: string | number
                 location: string | number | boolean | null
+                documents: (Omit<TeacherDetail["documents"][number], "verificationStatus"> & {
+                    verificationStatus: string | number
+                })[]
             }
             const data: ApiResponse<RawTeacherDetail | null> = await response.json()
             if (!data.succeeded) {
@@ -154,6 +160,10 @@ export default function TeacherDetailPage() {
                 ...data.data,
                 status: normalizeTeacherStatus(data.data.status),
                 location: normalizeLocation(data.data.location),
+                documents: (data.data.documents ?? []).map((doc) => ({
+                    ...doc,
+                    verificationStatus: normalizeVerificationStatus(doc.verificationStatus),
+                })),
             } satisfies TeacherDetail
         },
     })
@@ -192,11 +202,11 @@ export default function TeacherDetailPage() {
             }
         },
         onSuccess: (message) => {
-            console.log("Document approved:", message)
+            toast.success(message || t("teachers.documentApprovedSuccess"))
             queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
         },
-        onError: (error) => {
-            console.error("Error approving document:", error)
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.documentApproveError"))
         },
     })
 
@@ -220,7 +230,7 @@ export default function TeacherDetailPage() {
             }
             return data.message;
         },
-        onMutate: async ({ documentId, teacherId }) => {
+        onMutate: async ({ documentId, teacherId, reason }) => {
             await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
             const previousData = queryClient.getQueryData<TeacherDetail | null>(['teacher', teacherId])
             if (previousData) {
@@ -229,18 +239,17 @@ export default function TeacherDetailPage() {
                     return {
                         ...old,
                         documents: old.documents.map(doc => doc.id === documentId ?
-                            { ...doc, verificationStatus: 3, rejectionReason } : doc),
+                            { ...doc, verificationStatus: 3, rejectionReason: reason } : doc),
                     }
                 })
             }
         },
         onSuccess: (message) => {
-            console.log("Document approved:", message)
+            toast.success(message || t("teachers.documentRejectedSuccess"))
             queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
         },
-
-        onError: (error) => {
-            console.error("Error approving document:", error)
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.documentRejectError"))
         },
     })
 
@@ -280,14 +289,29 @@ export default function TeacherDetailPage() {
             }
         },
         onSuccess: (message) => {
-            console.log("Teacher blocked:", message)
+            toast.success(message || t("teachers.teacherBlockedSuccess"))
             queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
         },
-        onError: (error) => {
-            console.error("Error blocking teacher:", error)
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.teacherBlockError"))
         },
     })
 
+    // Activation is automatic on the backend: approving the last required document
+    // flips the teacher to Active (see Teacher-Registration-Guide, Step C). Surface
+    // that transition with a one-time toast so the admin sees it happen.
+    const prevStatusRef = React.useRef<number | undefined>(undefined)
+    React.useEffect(() => {
+        const current = teacher?.status
+        if (
+            prevStatusRef.current !== undefined &&
+            prevStatusRef.current !== TEACHER_STATUS.Active &&
+            current === TEACHER_STATUS.Active
+        ) {
+            toast.success(t("teachers.teacherActivatedSuccess"))
+        }
+        prevStatusRef.current = current
+    }, [teacher?.status, t])
 
     const BackArrow = direction === "rtl" ? IconArrowRight : IconArrowLeft
 
@@ -452,28 +476,8 @@ export default function TeacherDetailPage() {
     }
 
     const confirmApprove = () => {
-        // // API call: POST /api/teachers/{teacherId}/documents/{documentId}/approve
-        // console.log("[v0] Approving document:", {
-        //     teacherId: teacher.teacherId,
-        //     documentId: selectedDocument?.id,
-        // })
-        console.log({ confirmApprove: selectedDocument })
-        if (!selectedDocument) {
-            console.log("No selected document")
-            return
-        }
-
+        if (!selectedDocument) return
         approveDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id })
-        // const transaction = approveDocument({ teacherId: parseInt(params.id as string), documentId: selectedDocument.id })
-        // transaction.isPersisted.promise.then((tx) => {
-        //     if (tx.state === "failed") {
-        //         console.error("")
-        //     }
-        //     if (tx.state === "completed") {
-        //         console.log("Document approved")
-        //     }
-        // })
-
         setApproveDialogOpen(false)
         setSelectedDocument(null)
     }
@@ -482,16 +486,7 @@ export default function TeacherDetailPage() {
         if (!rejectionReason.trim()) {
             return
         }
-        // // API call: POST /api/teachers/{teacherId}/documents/{documentId}/reject
-        // console.log("[v0] Rejecting document:", {
-        //     teacherId: teacherId,
-        //     documentId: selectedDocument?.id,
-        //     reason: rejectionReason,
-        // })
-        if (!selectedDocument) {
-            console.log("No selected document")
-            return
-        }
+        if (!selectedDocument) return
         rejectDocument({ teacherId: Number(teacherId), documentId: selectedDocument.id, reason: rejectionReason })
         setRejectDialogOpen(false)
         setSelectedDocument(null)
@@ -502,6 +497,14 @@ export default function TeacherDetailPage() {
         blockTeacher({ teacherId: Number(teacherId), reason: blockReason })
         setBlockDialogOpen(false)
         setBlockReason("")
+    }
+
+    // No activate endpoint exists — activation happens automatically when the last
+    // required document is approved. This affordance just confirms by re-fetching
+    // the latest status from the server.
+    const confirmActivation = () => {
+        queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        toast.info(t("teachers.activationAutomaticHint"))
     }
 
     return (
@@ -821,29 +824,50 @@ export default function TeacherDetailPage() {
                             )}
 
                             {/* Activation Status */}
-                            <Card className={`border-2 ${teacher?.canBeActivated ? "border-success bg-success/5" : "border-muted bg-muted/50"}`}>
-                                <CardContent className="p-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${teacher?.canBeActivated ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
-                                            {teacher?.canBeActivated ? <IconCheck className="h-5 w-5" /> : <IconAlertCircle className="h-5 w-5" />}
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">
-                                                {teacher?.canBeActivated ? t("teachers.canBeActivated") : t("teachers.cannotBeActivated")}
-                                            </p>
-                                            <p className="text-sm text-muted-foreground">
-                                                {teacher?.canBeActivated
-                                                    ? locale === "ar"
-                                                        ? "جميع الوثائق معتمدة ويمكن تفعيل المعلم"
-                                                        : "All documents approved, teacher can be activated"
-                                                    : locale === "ar"
-                                                        ? "يجب اعتماد جميع الوثائق لتفعيل المعلم"
-                                                        : "All documents must be approved to activate teacher"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                            {(() => {
+                                const isActive = teacher?.status === TEACHER_STATUS.Active
+                                const canActivate = !!teacher?.canBeActivated
+                                // Three states: already Active, ready to activate, or blocked on documents.
+                                const tone = isActive || canActivate ? "success" : "muted"
+                                const title = isActive
+                                    ? t("teachers.teacherActive")
+                                    : canActivate
+                                        ? t("teachers.canBeActivated")
+                                        : t("teachers.cannotBeActivated")
+                                const description = isActive
+                                    ? t("teachers.teacherActiveHint")
+                                    : canActivate
+                                        ? t("teachers.canBeActivatedHint")
+                                        : t("teachers.cannotBeActivatedHint")
+                                return (
+                                    <Card className={`border-2 ${tone === "success" ? "border-success bg-success/5" : "border-muted bg-muted/50"}`}>
+                                        <CardContent className="p-4">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${tone === "success" ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
+                                                        {tone === "success" ? <IconCheck className="h-5 w-5" /> : <IconAlertCircle className="h-5 w-5" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium">{title}</p>
+                                                        <p className="text-sm text-muted-foreground">{description}</p>
+                                                    </div>
+                                                </div>
+                                                {/* Activation is automatic — this button just confirms by re-fetching status. */}
+                                                {canActivate && !isActive && (
+                                                    <Button
+                                                        size="sm"
+                                                        className="bg-success text-success-foreground hover:bg-success/90 shrink-0"
+                                                        onClick={confirmActivation}
+                                                    >
+                                                        <IconCheck className="h-4 w-4 me-2" />
+                                                        {t("teachers.activateTeacher")}
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                )
+                            })()}
                         </CardContent>
                     </Card>
                     </div>
