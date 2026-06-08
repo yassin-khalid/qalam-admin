@@ -22,10 +22,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { IconDeviceFloppy, IconLoader2, IconLock } from "@tabler/icons-react"
+import { IconCheck, IconDeviceFloppy, IconLoader2, IconLock, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { useLocale } from "@/lib/locale-context"
 import {
     MapsToDocumentType,
+    RequirementOption,
     RequirementTypeName,
     TeacherRegistrationRequirement,
 } from "@/collections/teacher-requirements"
@@ -56,6 +57,7 @@ const emptyForm: RequirementFormValue = {
     allowedExtensions: [".pdf", ".jpg", ".jpeg", ".png"],
     maxLength: null,
     mapsToDocumentType: 3,
+    options: null,
 }
 
 const BYTES_IN_MB = 1024 * 1024
@@ -73,6 +75,11 @@ export function RequirementFormDialog({
     const [extensionsText, setExtensionsText] = React.useState("")
     const [isSubmitting, setIsSubmitting] = React.useState(false)
     const [errors, setErrors] = React.useState<Record<string, string>>({})
+    // Indices of selection options currently open in edit ("form") mode; the rest
+    // render as compact read-only ("list item") rows. Per-row save validation errors
+    // are keyed by the same index.
+    const [editingOptions, setEditingOptions] = React.useState<Set<number>>(new Set())
+    const [optionErrors, setOptionErrors] = React.useState<Record<number, string>>({})
 
     // Reset the form whenever the drawer opens (with or without an existing row).
     React.useEffect(() => {
@@ -94,11 +101,15 @@ export function RequirementFormDialog({
                   allowedExtensions: requirement.allowedExtensions,
                   maxLength: requirement.maxLength,
                   mapsToDocumentType: requirement.mapsToDocumentType,
+                  options: requirement.options,
               }
             : { ...emptyForm }
         setForm(base)
         setExtensionsText((base.allowedExtensions ?? []).join(", "))
         setErrors({})
+        // Existing options open in read-only mode; nothing is being edited yet.
+        setEditingOptions(new Set())
+        setOptionErrors({})
     }, [open, requirement])
 
     const update = <K extends keyof RequirementFormValue>(key: K, value: RequirementFormValue[K]) => {
@@ -118,6 +129,22 @@ export function RequirementFormDialog({
         else if (!/^[a-z0-9_]+$/.test(form.code)) next.code = t("treq.codeInvalid")
         if (!form.nameEn.trim()) next.nameEn = t("form.required")
         if (!form.nameAr.trim()) next.nameAr = t("form.required")
+        if (form.requirementType === "Selection") {
+            const opts = form.options ?? []
+            if (opts.length === 0) {
+                next.options = t("treq.optionsEmpty")
+            } else if (opts.some((o) => !o.value.trim() || !o.labelEn.trim() || !o.labelAr.trim())) {
+                next.options = t("treq.optionsIncomplete")
+            } else if (new Set(opts.map((o) => o.value.trim())).size !== opts.length) {
+                next.options = t("treq.optionsDuplicate")
+            } else {
+                const min = form.minCount ?? 0
+                const max = form.maxCount ?? 0
+                if (!(min >= 1 && min <= max && max <= opts.length)) {
+                    next.options = t("treq.optionsCardinality")
+                }
+            }
+        }
         setErrors(next)
         return Object.keys(next).length === 0
     }
@@ -137,6 +164,70 @@ export function RequirementFormDialog({
 
     const isFile = form.requirementType === "File"
     const isText = form.requirementType === "Text"
+    const isSelection = form.requirementType === "Selection"
+
+    const options = form.options ?? []
+
+    const addOption = () => {
+        const newIndex = options.length
+        update("options", [...options, { value: "", labelEn: "", labelAr: "" }])
+        setEditingOptions((prev) => new Set(prev).add(newIndex))
+    }
+    const updateOption = (index: number, key: keyof RequirementOption, value: string) => {
+        update(
+            "options",
+            options.map((opt, i) => (i === index ? { ...opt, [key]: value } : opt))
+        )
+        if (optionErrors[index]) {
+            setOptionErrors((prev) => {
+                const next = { ...prev }
+                delete next[index]
+                return next
+            })
+        }
+    }
+    // Validate a single option, then collapse it from form mode to list-item mode.
+    const saveOption = (index: number) => {
+        const opt = options[index]
+        if (!opt) return
+        if (!opt.value.trim() || !opt.labelEn.trim() || !opt.labelAr.trim()) {
+            setOptionErrors((prev) => ({ ...prev, [index]: t("treq.optionsIncomplete") }))
+            return
+        }
+        if (options.some((o, i) => i !== index && o.value.trim() === opt.value.trim())) {
+            setOptionErrors((prev) => ({ ...prev, [index]: t("treq.optionsDuplicate") }))
+            return
+        }
+        setEditingOptions((prev) => {
+            const next = new Set(prev)
+            next.delete(index)
+            return next
+        })
+    }
+    const editOption = (index: number) => {
+        setEditingOptions((prev) => new Set(prev).add(index))
+    }
+    const removeOption = (index: number) => {
+        const next = options.filter((_, i) => i !== index)
+        update("options", next.length ? next : null)
+        // Indices after the removed one shift down by one; keep edit/error state aligned.
+        const shift = <T,>(map: Map<number, T>): Map<number, T> => {
+            const out = new Map<number, T>()
+            map.forEach((v, i) => {
+                if (i < index) out.set(i, v)
+                else if (i > index) out.set(i - 1, v)
+            })
+            return out
+        }
+        setEditingOptions((prev) => {
+            const asMap = new Map([...prev].map((i) => [i, true as const]))
+            return new Set(shift(asMap).keys())
+        })
+        setOptionErrors((prev) => {
+            const asMap = new Map(Object.entries(prev).map(([k, v]) => [Number(k), v]))
+            return Object.fromEntries(shift(asMap))
+        })
+    }
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -191,6 +282,7 @@ export function RequirementFormDialog({
                                     <SelectItem value="File">{t("treq.typeFile")}</SelectItem>
                                     <SelectItem value="Text">{t("treq.typeText")}</SelectItem>
                                     <SelectItem value="Boolean">{t("treq.typeBoolean")}</SelectItem>
+                                    <SelectItem value="Selection">{t("treq.typeSelection")}</SelectItem>
                                 </SelectContent>
                             </Select>
                             {isEdit && (
@@ -382,6 +474,152 @@ export function RequirementFormDialog({
                                     }
                                     className="bg-secondary border-0"
                                 />
+                            </div>
+                        )}
+
+                        {/* Selection-only options */}
+                        {isSelection && (
+                            <div className="space-y-5 rounded-lg border border-border p-4">
+                                <p className="text-sm font-medium text-foreground">{t("treq.selectionOptions")}</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="selMinCount" className="text-foreground">
+                                            {t("treq.minCount")}
+                                        </Label>
+                                        <Input
+                                            id="selMinCount"
+                                            type="number"
+                                            min={1}
+                                            value={form.minCount ?? 1}
+                                            onChange={(e) => update("minCount", Number(e.target.value))}
+                                            className="bg-secondary border-0"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="selMaxCount" className="text-foreground">
+                                            {t("treq.maxCount")}
+                                        </Label>
+                                        <Input
+                                            id="selMaxCount"
+                                            type="number"
+                                            min={1}
+                                            value={form.maxCount ?? 1}
+                                            onChange={(e) => update("maxCount", Number(e.target.value))}
+                                            className="bg-secondary border-0"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">{t("treq.selectionCardinalityHint")}</p>
+
+                                <div className="space-y-2">
+                                    <Label className="text-foreground">
+                                        {t("treq.options")}
+                                        <span className="text-destructive ms-1">*</span>
+                                    </Label>
+                                    {options.length === 0 && (
+                                        <p className="text-xs text-muted-foreground">{t("treq.optionsHint")}</p>
+                                    )}
+                                    <div className="space-y-3">
+                                        {options.map((opt, index) =>
+                                            editingOptions.has(index) ? (
+                                                // Edit mode — the option form.
+                                                <div key={index} className="space-y-2 rounded-md border border-border bg-secondary/50 p-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                                            onClick={() => removeOption(index)}
+                                                        >
+                                                            <IconTrash className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                    <Input
+                                                        dir="ltr"
+                                                        value={opt.value}
+                                                        placeholder={t("treq.optionValue")}
+                                                        onChange={(e) => updateOption(index, "value", e.target.value)}
+                                                        className="bg-background border-0"
+                                                    />
+                                                    <Input
+                                                        value={opt.labelEn}
+                                                        placeholder={t("treq.optionLabelEn")}
+                                                        onChange={(e) => updateOption(index, "labelEn", e.target.value)}
+                                                        className="bg-background border-0"
+                                                    />
+                                                    <Input
+                                                        dir="rtl"
+                                                        value={opt.labelAr}
+                                                        placeholder={t("treq.optionLabelAr")}
+                                                        onChange={(e) => updateOption(index, "labelAr", e.target.value)}
+                                                        className="bg-background border-0"
+                                                    />
+                                                    {optionErrors[index] && (
+                                                        <p className="text-sm text-destructive">{optionErrors[index]}</p>
+                                                    )}
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        onClick={() => saveOption(index)}
+                                                        className="bg-primary text-primary-foreground w-full"
+                                                    >
+                                                        <IconCheck className="h-4 w-4 me-2" />
+                                                        {t("treq.saveOption")}
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                // Show mode — compact read-only list item.
+                                                <div
+                                                    key={index}
+                                                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-secondary/50 p-3"
+                                                >
+                                                    <div className="min-w-0 space-y-0.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium text-foreground truncate">{opt.labelEn}</span>
+                                                            <code dir="ltr" className="text-xs text-muted-foreground bg-background rounded px-1.5 py-0.5">
+                                                                {opt.value}
+                                                            </code>
+                                                        </div>
+                                                        <p dir="rtl" className="text-sm text-muted-foreground truncate">{opt.labelAr}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7"
+                                                            onClick={() => editOption(index)}
+                                                        >
+                                                            <IconPencil className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                                            onClick={() => removeOption(index)}
+                                                        >
+                                                            <IconTrash className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )
+                                        )}
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addOption}
+                                        className="bg-transparent border-border"
+                                    >
+                                        <IconPlus className="h-4 w-4 me-2" />
+                                        {t("treq.addOption")}
+                                    </Button>
+                                    {errors.options && <p className="text-sm text-destructive">{errors.options}</p>}
+                                </div>
                             </div>
                         )}
 

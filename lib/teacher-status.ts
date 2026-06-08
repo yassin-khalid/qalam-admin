@@ -11,12 +11,13 @@ export type TeacherStatusName =
     | "Blocked"
 
 // TeacherStatus enum (backend): 1..5.
+// Canonical ordering per the teacher-registration guide.
 export const TEACHER_STATUS: Record<TeacherStatusName, number> = {
     AwaitingDocuments: 1,
     PendingVerification: 2,
-    DocumentsRejected: 3,
-    Active: 4,
-    Blocked: 5,
+    Active: 3,
+    Blocked: 4,
+    DocumentsRejected: 5,
 }
 
 // Normalize a wire value (string name or number) to its numeric code; 0 = unknown.

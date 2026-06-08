@@ -124,31 +124,31 @@ export default function TeachersPage() {
 
     const getStatusBadge = (status: number) => {
         switch (status) {
-            case 1:
+            case TEACHER_STATUS.AwaitingDocuments:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
                         {t("teachers.awaiting")}
                     </Badge>
                 )
-            case 2:
+            case TEACHER_STATUS.PendingVerification:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
                         {t("teachers.pending")}
                     </Badge>
                 )
-            case 3:
+            case TEACHER_STATUS.DocumentsRejected:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.rejected")}
                     </Badge>
                 )
-            case 4:
+            case TEACHER_STATUS.Active:
                 return (
                     <Badge variant="outline" className="border-success text-success bg-success/10">
                         {t("teachers.active")}
                     </Badge>
                 )
-            case 5:
+            case TEACHER_STATUS.Blocked:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.blocked")}
@@ -201,7 +201,7 @@ export default function TeachersPage() {
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.pending")}</CardDescription>
                             <CardTitle className="text-2xl text-warning">
-                                {teachers?.filter((teacher) => teacher.status === 2).length ?? 0}
+                                {teachers?.filter((teacher) => teacher.status === TEACHER_STATUS.PendingVerification).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -209,7 +209,7 @@ export default function TeachersPage() {
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.active")}</CardDescription>
                             <CardTitle className="text-2xl text-success">
-                                {teachers?.filter((teacher) => teacher.status === 4).length ?? 0}
+                                {teachers?.filter((teacher) => teacher.status === TEACHER_STATUS.Active).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -217,7 +217,7 @@ export default function TeachersPage() {
                         <CardHeader className="pb-2">
                             <CardDescription>{t("teachers.blocked")}</CardDescription>
                             <CardTitle className="text-2xl text-destructive">
-                                {teachers?.filter((teacher) => teacher.status === 5).length ?? 0}
+                                {teachers?.filter((teacher) => teacher.status === TEACHER_STATUS.Blocked).length ?? 0}
                             </CardTitle>
                         </CardHeader>
                     </Card>
@@ -242,11 +242,11 @@ export default function TeachersPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">{t("common.all")}</SelectItem>
-                                    <SelectItem value="1">{t("teachers.awaiting")}</SelectItem>
-                                    <SelectItem value="2">{t("teachers.pending")}</SelectItem>
-                                    <SelectItem value="3">{t("teachers.rejected")}</SelectItem>
-                                    <SelectItem value="4">{t("teachers.active")}</SelectItem>
-                                    <SelectItem value="5">{t("teachers.blocked")}</SelectItem>
+                                    <SelectItem value={String(TEACHER_STATUS.AwaitingDocuments)}>{t("teachers.awaiting")}</SelectItem>
+                                    <SelectItem value={String(TEACHER_STATUS.PendingVerification)}>{t("teachers.pending")}</SelectItem>
+                                    <SelectItem value={String(TEACHER_STATUS.DocumentsRejected)}>{t("teachers.rejected")}</SelectItem>
+                                    <SelectItem value={String(TEACHER_STATUS.Active)}>{t("teachers.active")}</SelectItem>
+                                    <SelectItem value={String(TEACHER_STATUS.Blocked)}>{t("teachers.blocked")}</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

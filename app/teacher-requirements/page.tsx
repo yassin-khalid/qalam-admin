@@ -43,6 +43,8 @@ export default function TeacherRequirementsPage() {
                 return t("treq.typeText")
             case "Boolean":
                 return t("treq.typeBoolean")
+            case "Selection":
+                return t("treq.typeSelection")
             default:
                 return type
         }
@@ -156,6 +158,7 @@ export default function TeacherRequirementsPage() {
                 draft.allowedExtensions = value.allowedExtensions
                 draft.maxLength = value.maxLength
                 draft.mapsToDocumentType = value.mapsToDocumentType
+                draft.options = value.options
             })
             const result = await transaction.isPersisted.promise
             if (result.state === "failed") {

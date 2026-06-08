@@ -4,22 +4,31 @@ import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { createCollection } from "@tanstack/react-db";
 
 // Requirement type as returned by read endpoints (string) vs write endpoints (number).
-export type RequirementTypeName = "File" | "Text" | "Boolean";
+export type RequirementTypeName = "File" | "Text" | "Boolean" | "Selection";
 
 export const REQUIREMENT_TYPE_TO_NUMBER: Record<RequirementTypeName, number> = {
     File: 1,
     Text: 2,
     Boolean: 3,
+    Selection: 4,
 };
 
 const NUMBER_TO_REQUIREMENT_TYPE: Record<number, RequirementTypeName> = {
     1: "File",
     2: "Text",
     3: "Boolean",
+    4: "Selection",
 };
 
 // 1 Identity, 2 Certificate, 3 Other (file types only)
 export type MapsToDocumentType = 1 | 2 | 3;
+
+// A single choice in a Selection requirement (bilingual label keyed by value).
+export type RequirementOption = {
+    value: string;
+    labelAr: string;
+    labelEn: string;
+};
 
 export type TeacherRegistrationRequirement = {
     id: number;
@@ -39,6 +48,7 @@ export type TeacherRegistrationRequirement = {
     allowedExtensions: string[] | null;
     maxLength: number | null;
     mapsToDocumentType: MapsToDocumentType | null;
+    options: RequirementOption[] | null;
     createdAt: string | null;
 };
 
@@ -74,13 +84,27 @@ type RawRequirement = {
     allowedExtensions?: string[] | null;
     maxLength?: number | null;
     mapsToDocumentType?: MapsToDocumentType | null;
+    options?: RequirementOption[] | null;
     createdAt?: string | null;
 };
 
 export function toRequirementTypeName(value: unknown): RequirementTypeName {
     if (typeof value === "number") return NUMBER_TO_REQUIREMENT_TYPE[value] ?? "File";
-    if (value === "File" || value === "Text" || value === "Boolean") return value;
+    if (value === "File" || value === "Text" || value === "Boolean" || value === "Selection") return value;
     return "File";
+}
+
+// Coerce a raw options payload into clean RequirementOption rows (drops malformed entries).
+function normalizeOptions(raw: RequirementOption[] | null | undefined): RequirementOption[] | null {
+    if (!Array.isArray(raw)) return null;
+    const cleaned = raw
+        .filter((o): o is RequirementOption => !!o && typeof o.value === "string")
+        .map((o) => ({
+            value: o.value,
+            labelAr: o.labelAr ?? "",
+            labelEn: o.labelEn ?? "",
+        }));
+    return cleaned.length ? cleaned : null;
 }
 
 // Normalize a server DTO (which may use string or numeric enums) into our stored shape.
@@ -103,14 +127,21 @@ function normalize(raw: RawRequirement): TeacherRegistrationRequirement {
         allowedExtensions: raw.allowedExtensions ?? null,
         maxLength: raw.maxLength ?? null,
         mapsToDocumentType: raw.mapsToDocumentType ?? null,
+        options: normalizeOptions(raw.options),
         createdAt: raw.createdAt ?? null,
     };
 }
 
 // Build the request body the API expects (numeric enums) from a stored item.
+// The backend types the numeric fields as non-nullable int, so an explicit `null`
+// fails JSON deserialization — we OMIT fields that don't apply to the chosen type
+// (and any null number) rather than sending null.
 function toRequestBody(item: TeacherRegistrationRequirement) {
     const isFile = item.requirementType === "File";
-    return {
+    const isSelection = item.requirementType === "Selection";
+    const isText = item.requirementType === "Text";
+
+    const body: Record<string, unknown> = {
         code: item.code,
         nameAr: item.nameAr,
         nameEn: item.nameEn,
@@ -120,13 +151,25 @@ function toRequestBody(item: TeacherRegistrationRequirement) {
         isActive: item.isActive,
         isRequired: item.isRequired,
         sortOrder: item.sortOrder,
-        minCount: isFile ? item.minCount : null,
-        maxCount: isFile ? item.maxCount : null,
-        maxFileSizeBytes: isFile ? item.maxFileSizeBytes : null,
-        allowedExtensions: isFile ? item.allowedExtensions : null,
-        maxLength: item.requirementType === "Text" ? item.maxLength : null,
-        mapsToDocumentType: isFile ? item.mapsToDocumentType : null,
     };
+
+    // minCount/maxCount drive file cardinality and selection cardinality.
+    if (isFile || isSelection) {
+        if (item.minCount != null) body.minCount = item.minCount;
+        if (item.maxCount != null) body.maxCount = item.maxCount;
+    }
+    if (isFile) {
+        if (item.maxFileSizeBytes != null) body.maxFileSizeBytes = item.maxFileSizeBytes;
+        body.allowedExtensions = item.allowedExtensions; // List<string>, null tolerated
+        if (item.mapsToDocumentType != null) body.mapsToDocumentType = item.mapsToDocumentType;
+    }
+    if (isText && item.maxLength != null) {
+        body.maxLength = item.maxLength;
+    }
+    if (isSelection) {
+        body.options = item.options;
+    }
+    return body;
 }
 
 export const teacherRequirementsCollection = createCollection(

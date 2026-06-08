@@ -59,10 +59,12 @@ import {
     normalizeVerificationStatus,
 } from "@/lib/teacher-status"
 
+// IdentityType enum (backend): 1 NationalId, 2 Iqama, 3 Passport, 4 DrivingLicense.
 const identityTypeNames: Record<number, { en: string; ar: string }> = {
     1: { en: "National ID", ar: "الهوية الوطنية" },
-    2: { en: "Passport", ar: "جواز السفر" },
-    3: { en: "Iqama", ar: "الإقامة" },
+    2: { en: "Iqama", ar: "الإقامة" },
+    3: { en: "Passport", ar: "جواز السفر" },
+    4: { en: "Driving License", ar: "رخصة القيادة" },
 }
 
 export default function TeacherDetailPage() {
@@ -125,6 +127,9 @@ export default function TeacherDetailPage() {
             verificationStatus: string | null
             rejectionReason?: string | null
             teacherDocumentId?: number | null
+            textValue?: string | null
+            boolValue?: boolean | null
+            selectedOptions?: { value: string; labelAr: string; labelEn: string }[] | null
         }[]
     }
 
@@ -317,31 +322,31 @@ export default function TeacherDetailPage() {
 
     const getStatusBadge = (status: number) => {
         switch (status) {
-            case 1:
+            case TEACHER_STATUS.AwaitingDocuments:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
                         {t("teachers.awaiting")}
                     </Badge>
                 )
-            case 2:
+            case TEACHER_STATUS.PendingVerification:
                 return (
                     <Badge variant="outline" className="border-warning text-warning bg-warning/10">
                         {t("teachers.pending")}
                     </Badge>
                 )
-            case 3:
+            case TEACHER_STATUS.DocumentsRejected:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.rejected")}
                     </Badge>
                 )
-            case 4:
+            case TEACHER_STATUS.Active:
                 return (
                     <Badge variant="outline" className="border-success text-success bg-success/10">
                         {t("teachers.active")}
                     </Badge>
                 )
-            case 5:
+            case TEACHER_STATUS.Blocked:
                 return (
                     <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                         {t("teachers.blocked")}
@@ -633,24 +638,45 @@ export default function TeacherDetailPage() {
                                 <CardDescription className="mt-1">{t("treq.checklistSubtitle")}</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-2">
-                                {teacher.registrationRequirements.map((req) => (
+                                {teacher.registrationRequirements.map((req) => {
+                                    // Selection rows resolve to bilingual chips; fall back to the
+                                    // raw comma-joined textValue if the server didn't expand them.
+                                    const selectionLabels =
+                                        req.requirementType === "Selection"
+                                            ? (req.selectedOptions?.length
+                                                  ? req.selectedOptions.map((o) => (locale === "ar" ? o.labelAr : o.labelEn) || o.value)
+                                                  : (req.textValue ? req.textValue.split(",").map((s) => s.trim()).filter(Boolean) : []))
+                                            : []
+                                    return (
                                     <div
                                         key={req.code}
-                                        className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                                        className="flex flex-col gap-2 rounded-lg border border-border p-3"
                                     >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="font-medium text-foreground truncate">
-                                                {getRequirementLabel(req)}
-                                            </span>
-                                            {req.isRequired && (
-                                                <Badge variant="outline" className="border-primary text-primary bg-primary/10 shrink-0">
-                                                    {t("treq.required")}
-                                                </Badge>
-                                            )}
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="font-medium text-foreground truncate">
+                                                    {getRequirementLabel(req)}
+                                                </span>
+                                                {req.isRequired && (
+                                                    <Badge variant="outline" className="border-primary text-primary bg-primary/10 shrink-0">
+                                                        {t("treq.required")}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            {getRequirementStatusBadge(req)}
                                         </div>
-                                        {getRequirementStatusBadge(req)}
+                                        {selectionLabels.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {selectionLabels.map((label, i) => (
+                                                    <Badge key={i} variant="secondary" className="font-normal">
+                                                        {label}
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                    )
+                                })}
                             </CardContent>
                         </Card>
                     )}
