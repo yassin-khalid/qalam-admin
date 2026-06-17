@@ -16,23 +16,60 @@ export type EducationCurriculumItem = {
     createdAt: string;
 };
 
+const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+    'Accept': 'application/json',
+    'Accept-Language': localStorage.getItem('locale') === 'en' ? 'en-US' : 'ar-EG',
+})
+
 export const curriculumCollection = createCollection(queryCollectionOptions({
     queryKey: () => ['curriculums'],
     queryFn: async () => {
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum`, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-            }
+            headers: authHeaders(),
         })
         if (!response.ok) {
             throw new Error('Failed to fetch curriculums')
         }
-        const data: ApiResponse<PaginatedResult<EducationCurriculumItem>> = await response.json()
-        return data.data!.items
+        // Tolerate both a direct array and a paginated { items: [...] } envelope.
+        const data: ApiResponse<PaginatedResult<EducationCurriculumItem> | EducationCurriculumItem[]> = await response.json()
+        return Array.isArray(data.data) ? data.data : data.data?.items ?? []
     },
     queryClient,
     getKey: (item) => item.id,
+    onInsert: async ({ transaction }) => {
+        const item = transaction.mutations[0].modified
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify(item),
+        })
+        const data: ApiResponse<EducationCurriculumItem> = await response.json()
+        if (!response.ok) throw new Error(data.message)
+        return data.data as EducationCurriculumItem
+    },
+    onUpdate: async ({ transaction }) => {
+        const item = transaction.mutations[0].modified
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum/${item.id}`, {
+            method: 'PUT',
+            headers: authHeaders(),
+            body: JSON.stringify(item),
+        })
+        const data: ApiResponse<EducationCurriculumItem> = await response.json()
+        if (!response.ok) throw new Error(data.message)
+        return data.data as EducationCurriculumItem
+    },
+    onDelete: async ({ transaction }) => {
+        const item = transaction.mutations[0].modified
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Curriculum/${item.id}`, {
+            method: 'DELETE',
+            headers: authHeaders(),
+        })
+        const data: ApiResponse<EducationCurriculumItem> = await response.json()
+        if (!response.ok) throw new Error(data.message)
+        return data.data as EducationCurriculumItem
+    },
 }))
 
 export type ToggleStatusPayload = EducationCurriculumItem
@@ -83,7 +120,7 @@ export const curriculumWithLevelsCount = createLiveQueryCollection({
         }))
 
         const curriculums = q.from({curriculums: curriculumCollection})
-        .join({levelsCount: levelsCount}, ({curriculums, levelsCount}) => eq(curriculums.id, levelsCount.curriculumId))
+        .join({levelsCount: levelsCount}, ({curriculums, levelsCount}) => eq(curriculums.id, levelsCount.curriculumId), 'left')
         .select(({curriculums, levelsCount}) => ({
             ...curriculums,
             levelsCount: levelsCount?.count ?? 0,

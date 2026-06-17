@@ -1,6 +1,6 @@
 import React from "react"
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Noto_Sans_Arabic, Noto_Kufi_Arabic } from 'next/font/google'
+import { Geist, Geist_Mono, Noto_Kufi_Arabic } from 'next/font/google'
 // import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
 import './globals.css'

@@ -11,48 +11,13 @@ export type EducationDomainItem = {
   code: string;
   descriptionAr: string;
   descriptionEn: string;
+  isActive: boolean;
   createdAt: string; // ISO date string
 };
 
-interface CurrentState {
-    domainId: number | null
-    curriculumId: number | null
-    levelId: number | null
-    gradeId: number | null
-    termId: number | null
-    subjectId: number | null
-    quranContentTypeId: number | null
-    quranLevelId: number | null
-}
-
-interface Rule {
-    hasCurriculum: boolean
-    hasEducationLevel: boolean
-    hasGrade: boolean
-    hasAcademicTerm: boolean
-    hasContentUnits: boolean
-    hasLessons: boolean
-    requiresQuranContentType: boolean
-    requiresQuranLevel: boolean
-}
-
-interface Option {
-    id: number
-    nameAr: string
-    nameEn: string
-    code: string | null
-}
-
-interface HierarchyData {
-    currentState: CurrentState
-    rule: Rule
-    nextStep: string
-    options: Option[]
-}
-
 export const domainCollection = createCollection(queryCollectionOptions({
     queryKey: () => ['domains'],
-    queryFn: async (context) => {
+    queryFn: async () => {
         const locale = localStorage.getItem('locale') ?? 'ar'
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Education/Domains`, {
             headers: {
@@ -151,7 +116,7 @@ export const domainWithCurriculumsCount = createCollection(liveQueryCollectionOp
 
 
         const domains = q.from({domains: domainCollection})
-        .join({curriculumsCount: curriculumsCount}, ({domains, curriculumsCount}) => eq(domains.id, curriculumsCount.domainId))
+        .join({curriculumsCount: curriculumsCount}, ({domains, curriculumsCount}) => eq(domains.id, curriculumsCount.domainId), 'left')
         .select(({domains, curriculumsCount}) => ({
             ...domains,
             name: domains.nameEn,
@@ -161,25 +126,3 @@ export const domainWithCurriculumsCount = createCollection(liveQueryCollectionOp
         return q.from({domains})
     }
 }))
-
-
-// export const domainHierarchy = createCollection(queryCollectionOptions({
-//     queryKey: () => ['domain-hierarchy'],
-//     queryFn: async () => {
-//         const locale = localStorage.getItem('locale') ?? 'ar'
-//         const accessToken = localStorage.getItem('access_token')
-//         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/filter-options`, {
-//             method: 'GET',
-//             headers: {
-//                 'Content-Type': 'application/json',
-//                 'Authorization': `Bearer ${accessToken}`,
-//                 'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
-//             }
-//         })
-//         const json = await response.json() as ApiResponse<HierarchyData>
-//         if (!response.ok || !json.succeeded) {
-//             throw new Error(json.message)
-//         }
-//         return json.data as HierarchyData
-//     }
-// }))

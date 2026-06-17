@@ -8,10 +8,11 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { Badge } from "@/components/ui/badge"
-import { curriculumWithLevelsCount, toggleStatus } from "@/collections/curriculums"
+import { curriculumCollection, curriculumWithLevelsCount, toggleStatus } from "@/collections/curriculums"
 import { eq, useLiveQuery } from "@tanstack/react-db"
 import { domainCollection } from "@/collections/domain"
 import { useLocale } from "@/lib/locale-context"
+import { toast } from "sonner"
 
 interface Curriculum {
     id: number
@@ -27,65 +28,6 @@ interface Curriculum {
     levelsCount: number
     createdAt: string
 }
-
-const mockCurriculums: Curriculum[] = [
-    {
-        id: 1,
-        nameEn: "National Curriculum 2024",
-        nameAr: "المنهج الوطني 2024",
-        domain: "Science & Technology",
-        domainId: 1,
-        active: true,
-        order: 1,
-        levelsCount: 4,
-        createdAt: "2024-01-15",
-        descriptionAr: "المنهج الوطني 2024",
-        descriptionEn: "National Curriculum 2024",
-        country: "Egypt",
-    },
-    {
-        id: 2,
-        nameEn: "International Baccalaureate",
-        nameAr: "البكالوريا الدولية",
-        domain: "Science & Technology",
-        domainId: 1,
-        active: true,
-        order: 2,
-        levelsCount: 3,
-        createdAt: "2024-01-12",
-        descriptionAr: "البكالوريا الدولية",
-        descriptionEn: "International Baccalaureate",
-        country: "Egypt",
-    },
-    {
-        id: 3,
-        nameEn: "Advanced Placement",
-        nameAr: "التنسيب المتقدم",
-        domain: "Mathematics",
-        domainId: 4,
-        active: false,
-        order: 3,
-        levelsCount: 2,
-        createdAt: "2024-01-10",
-        descriptionAr: "التنسيب المتقدم",
-        descriptionEn: "Advanced Placement",
-        country: "Egypt",
-    },
-    {
-        id: 4,
-        nameEn: "Cambridge IGCSE",
-        nameAr: "كامبريدج IGCSE",
-        domain: "Languages",
-        domainId: 3,
-        active: true,
-        order: 4,
-        levelsCount: 5,
-        createdAt: "2024-01-08",
-        descriptionAr: "كامبريدج IGCSE",
-        descriptionEn: "Cambridge IGCSE",
-        country: "Egypt",
-    },
-]
 
 export default function CurriculumsPage() {
     const router = useRouter()
@@ -162,7 +104,6 @@ export default function CurriculumsPage() {
             id: "actions",
             cell: ({ row }) => (
                 <ActionsCell
-                    onView={() => router.push(`/curriculums/${row.original.id}`)}
                     onEdit={() => router.push(`/curriculums/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, item: row.original })}
                     onToggleStatus={
@@ -192,9 +133,18 @@ export default function CurriculumsPage() {
     ]
 
     const handleDelete = async () => {
-        // if (deleteDialog.item) {
-        //     setCurriculums((prev) => prev.filter((c) => c.id !== deleteDialog.item!.id))
-        // }
+        if (deleteDialog.item) {
+            const tx = curriculumCollection.delete(deleteDialog.item.id)
+            tx.isPersisted.promise.then(result => {
+                if (result.state === "completed") {
+                    setDeleteDialog({ open: false, item: null })
+                }
+                if (result.state === "failed") {
+                    // e.g. 400 "blocked if curriculum has education-level children"
+                    toast.error(result.error?.message ?? "Failed to delete curriculum")
+                }
+            })
+        }
     }
 
     return (

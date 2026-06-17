@@ -1,12 +1,14 @@
 import { queryClient } from "@/lib/utils";
 import { ApiResponse } from "@/types/ApiResponse";
-import { createCollection, createOptimisticAction } from "@tanstack/db";
+import { createCollection } from "@tanstack/db";
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { LocationValue, normalizeLocation, normalizeTeacherStatus } from "@/lib/teacher-status";
 
 // Canonical shape used by the UI: status is the numeric TeacherStatus code,
-// location is the canonical Inside/Outside string union.
-export type PendingTeacher = {
+// location is the canonical Inside/Outside string union. Shared by the "all
+// teachers" list (AdminTeacherListItemDto) and the pending queue
+// (PendingTeacherDto) — both endpoints return the same fields.
+export type TeacherListItem = {
     teacherId: number;
     userId: number;
     fullName: string;
@@ -21,8 +23,11 @@ export type PendingTeacher = {
     rejectedDocuments: number;
 }
 
+// Back-compat alias — older code referred to this list row as PendingTeacher.
+export type PendingTeacher = TeacherListItem;
+
 // Raw row as it arrives from the API — status/location may be string enums or numbers.
-type RawPendingTeacher = Omit<PendingTeacher, "status" | "location"> & {
+type RawTeacherListItem = Omit<TeacherListItem, "status" | "location"> & {
     status: string | number;
     location: string | number | boolean | null;
 }
@@ -42,6 +47,11 @@ type RawPendingTeacher = Omit<PendingTeacher, "status" | "location"> & {
 //     createdAt: string;
 // }
 
+// /Teachers (Endpoint 1) is paginated and caps pageSize at 50. We want EVERY
+// teacher (all statuses) so the list page can filter/search/tally client-side,
+// so page through until the server reports no next page.
+const MAX_PAGE_SIZE = 50;
+
 export const teacherColllection = createCollection(queryCollectionOptions(
     {
         queryKey: ['teachers'],
@@ -50,25 +60,35 @@ export const teacherColllection = createCollection(queryCollectionOptions(
             const locale = localStorage.getItem('locale');
 
             try {
-
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/Pending`, {
-                method: 'GET',
-                headers: {
+                const headers = {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${access_token}`,
                     'Accept': 'application/json',
                     'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
-                },
-            });
-            const data = await response.json() as ApiResponse<RawPendingTeacher[]>
-            if (!data.succeeded) {
-                throw new Error(data.message);
-            }
-            return (data.data ?? []).map((teacher) => ({
-                ...teacher,
-                status: normalizeTeacherStatus(teacher.status),
-                location: normalizeLocation(teacher.location),
-            }));
+                };
+
+                const rows: RawTeacherListItem[] = [];
+                let pageNumber = 1;
+                // Safety bound on the loop in case meta is missing/malformed.
+                for (;;) {
+                    const response = await fetch(
+                        `${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/Teachers?pageNumber=${pageNumber}&pageSize=${MAX_PAGE_SIZE}`,
+                        { method: 'GET', headers },
+                    );
+                    const data = await response.json() as ApiResponse<RawTeacherListItem[]>
+                    if (!data.succeeded) {
+                        throw new Error(data.message);
+                    }
+                    rows.push(...(data.data ?? []));
+                    if (!data.meta?.hasNextPage) break;
+                    pageNumber += 1;
+                }
+
+                return rows.map((teacher) => ({
+                    ...teacher,
+                    status: normalizeTeacherStatus(teacher.status),
+                    location: normalizeLocation(teacher.location),
+                }));
             } catch (error) {
                 console.error(error);
                 throw error;

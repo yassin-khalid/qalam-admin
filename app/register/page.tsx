@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useLocale } from "@/lib/locale-context"
 import { useTheme } from "@/lib/theme-context"
-import { useAuth } from "@/lib/auth-context"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -28,28 +27,19 @@ import { ApiResponse } from "@/types/ApiResponse"
 import Image from "next/image"
 
 export default function RegisterPage() {
-    const [firstName, setFirstName] = useQueryState("firstName", parseAsString.withDefault(""))
-    const [lastName, setLastName] = useQueryState("lastName", parseAsString.withDefault(""))
-    const [email, setEmail] = useQueryState("email", parseAsString.withDefault(""))
-    const [phoneNumber, setPhoneNumber] = useQueryState("phoneNumber", parseAsString.withDefault(""))
+    const [firstName] = useQueryState("firstName", parseAsString.withDefault(""))
+    const [lastName] = useQueryState("lastName", parseAsString.withDefault(""))
+    const [email] = useQueryState("email", parseAsString.withDefault(""))
+    const [phoneNumber] = useQueryState("phoneNumber", parseAsString.withDefault(""))
 
     const { t, locale, setLocale, direction } = useLocale()
     const { theme, setTheme } = useTheme()
-    const { login } = useAuth()
     const router = useRouter()
 
-    const [formData, setFormData] = React.useState({
-        firstName: "",
-        lastName: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        phoneNumber: "",
-    })
     const [showPassword, setShowPassword] = React.useState(false)
     const [showConfirmPassword, setShowConfirmPassword] = React.useState(false)
-    const [isLoading, setIsLoading] = React.useState(false)
-    const [errors, setErrors] = React.useState<Record<string, string>>({})
+    const [isLoading] = React.useState(false)
+    const [errors] = React.useState<Record<string, string>>({})
 
     const passwordRequirements = [
         { key: "length", labelKey: "auth.pwdReqLength", test: (p: string) => p.length >= 8 },
@@ -59,10 +49,6 @@ export default function RegisterPage() {
     ]
 
 
-
-    const validateEmail = (email: string) => {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    }
 
     const validatePhone = (phone: string) => {
         return /^\+?[\d\s-]{10,}$/.test(phone)

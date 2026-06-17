@@ -39,8 +39,8 @@ interface EntityFormProps {
     title: string
     description?: string
     fields: FieldConfig[]
-    initialData?: Record<string, any>
-    onSubmit: (data: Record<string, any>) => Promise<void>
+    initialData?: Record<string, unknown>
+    onSubmit: (data: Record<string, unknown>) => Promise<void>
     onCancel?: () => void
     submitLabel?: string
     isEdit?: boolean
@@ -54,14 +54,13 @@ export function EntityForm({
     onSubmit,
     onCancel,
     submitLabel = "Save",
-    isEdit = false,
 }: EntityFormProps) {
     const router = useRouter()
-    const [formData, setFormData] = React.useState<Record<string, any>>(initialData)
+    const [formData, setFormData] = React.useState<Record<string, unknown>>(initialData)
     const [isSubmitting, setIsSubmitting] = React.useState(false)
     const [errors, setErrors] = React.useState<Record<string, string>>({})
 
-    const handleChange = (key: string, value: any) => {
+    const handleChange = (key: string, value: unknown) => {
         setFormData((prev) => ({ ...prev, [key]: value }))
         if (errors[key]) {
             setErrors((prev) => {
@@ -116,7 +115,7 @@ export function EntityForm({
                     <Textarea
                         id={field.key}
                         placeholder={field.placeholder}
-                        value={formData[field.key] || ""}
+                        value={(formData[field.key] as string) || ""}
                         onChange={(e) => handleChange(field.key, e.target.value)}
                         className="bg-secondary border-0 min-h-[100px]"
                     />
@@ -127,7 +126,7 @@ export function EntityForm({
                         id={field.key}
                         type="number"
                         placeholder={field.placeholder}
-                        value={formData[field.key] || ""}
+                        value={(formData[field.key] as string | number) || ""}
                         onChange={(e) => handleChange(field.key, e.target.value)}
                         className="bg-secondary border-0"
                     />
@@ -135,7 +134,7 @@ export function EntityForm({
             case "select":
                 return (
                     <Select
-                        value={formData[field.key] || ""}
+                        value={(formData[field.key] as string) || ""}
                         onValueChange={(value) => handleChange(field.key, value)}
                     >
                         <SelectTrigger className="bg-secondary border-0">
@@ -154,7 +153,7 @@ export function EntityForm({
                 return (
                     <Switch
                         id={field.key}
-                        checked={formData[field.key] || false}
+                        checked={(formData[field.key] as boolean) || false}
                         onCheckedChange={(checked) => handleChange(field.key, checked)}
                     />
                 )
@@ -163,7 +162,7 @@ export function EntityForm({
                     <Input
                         id={field.key}
                         placeholder={field.placeholder}
-                        value={formData[field.key] || ""}
+                        value={(formData[field.key] as string) || ""}
                         onChange={(e) => handleChange(field.key, e.target.value)}
                         className="bg-secondary border-0"
                     />

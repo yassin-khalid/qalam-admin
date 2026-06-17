@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { EntityForm } from "@/components/admin/entity-form"
 import { domainCollection } from "@/collections/domain"
-import { useLocale } from "@/lib/locale-context"
 
 const domainFields = [
     {
@@ -65,16 +64,16 @@ const domainFields = [
 
 export default function NewDomainPage() {
     const router = useRouter()
-    const { locale } = useLocale()
 
-    const handleSubmit = async (data: Record<string, any>) => {
+    const handleSubmit = async (data: Record<string, unknown>) => {
         const result = domainCollection.insert(
             {
-                nameEn: data.name,
-                descriptionEn: data.descriptionEn,
-                nameAr: data.nameAr,
-                descriptionAr: data.descriptionAr,
-                code: data.code || "123",
+                nameEn: data.name as string,
+                descriptionEn: data.descriptionEn as string,
+                nameAr: data.nameAr as string,
+                descriptionAr: data.descriptionAr as string,
+                code: (data.code as string) || "123",
+                isActive: (data.active as boolean) ?? true,
                 createdAt: new Date().toISOString(),
                 id: 0,
             },

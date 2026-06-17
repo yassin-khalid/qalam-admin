@@ -5,8 +5,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ColumnDef } from "@tanstack/react-table"
 import { AdminLayout } from "@/components/admin/admin-layout"
-import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
-import { DeleteDialog } from "@/components/admin/delete-dialog"
+import { DataTable, StatusCell, SortableHeader } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
 import { eq, useLiveQuery } from "@tanstack/react-db"
 import { levelWithGradesCount } from "@/collections/levels"
@@ -24,56 +23,8 @@ interface Level {
     gradesCount: number
 }
 
-const mockLevels: Level[] = [
-    {
-        id: 1,
-        nameEn: "Primary Education",
-        nameAr: "التعليم الابتدائي",
-        curriculum: "National Curriculum 2024",
-        curriculumId: 1,
-        isActive: true,
-        orderIndex: 1,
-        gradesCount: 6,
-    },
-    {
-        id: 2,
-        nameEn: "Middle School",
-        nameAr: "المرحلة المتوسطة",
-        curriculum: "National Curriculum 2024",
-        curriculumId: 1,
-        isActive: true,
-        orderIndex: 2,
-        gradesCount: 3,
-    },
-    {
-        id: 3,
-        nameEn: "Secondary Education",
-        nameAr: "التعليم الثانوي",
-        curriculum: "National Curriculum 2024",
-        curriculumId: 1,
-        isActive: true,
-        orderIndex: 3,
-        gradesCount: 3,
-    },
-    {
-        id: 4,
-        nameEn: "Higher Secondary",
-        nameAr: "الثانوية العليا",
-        curriculum: "International Baccalaureate",
-        curriculumId: 2,
-        isActive: false,
-        orderIndex: 4,
-        gradesCount: 2,
-    },
-]
-
 export default function LevelsPage() {
     const router = useRouter()
-    // const [levels, setLevels] = React.useState(mockLevels)
-    const [deleteDialog, setDeleteDialog] = React.useState<{ open: boolean; item: Level | null }>({
-        open: false,
-        item: null,
-    })
     const { locale } = useLocale()
 
     const { data: levels } = useLiveQuery(q => q.from({ levels: levelWithGradesCount })
@@ -87,6 +38,7 @@ export default function LevelsPage() {
 
     const { data: curriculums } = useLiveQuery(q => q.from({ curriculums: curriculumCollection }))
 
+    // Levels are create + list only — no update/delete/toggle actions (CRUD guide §13).
     const columns: ColumnDef<Level>[] = [
         {
             accessorKey: "orderIndex",
@@ -126,31 +78,7 @@ export default function LevelsPage() {
             header: "Status",
             cell: ({ row }) => <StatusCell active={row.original.isActive} />,
         },
-        {
-            id: "actions",
-            cell: ({ row }) => (
-                <ActionsCell
-                    onView={() => router.push(`/levels/${row.original.id}`)}
-                    onEdit={() => router.push(`/levels/${row.original.id}/edit`)}
-                    onDelete={() => setDeleteDialog({ open: true, item: row.original })}
-                    onToggleStatus={() => {
-                        // setLevels((prev) =>
-                        //     prev.map((l) =>
-                        //         l.id === row.original.id ? { ...l, active: !l.active } : l
-                        //     )
-                        // )
-                    }}
-                    isActive={row.original.isActive}
-                />
-            ),
-        },
     ]
-
-    const handleDelete = async () => {
-        // if (deleteDialog.item) {
-        //     setLevels((prev) => prev.filter((l) => l.id !== deleteDialog.item!.id))
-        // }
-    }
 
     return (
         <AdminLayout
@@ -170,22 +98,12 @@ export default function LevelsPage() {
                         key: "curriculum",
                         label: "Curriculum",
                         options: [
-                            // { value: "National Curriculum 2024", label: "National Curriculum 2024" },
-                            // { value: "International Baccalaureate", label: "International Baccalaureate" },
-                            ...curriculums?.map((curriculum) => ({ value: locale === 'ar' ? curriculum.nameAr : curriculum.nameEn, label: locale === 'ar' ? curriculum.nameAr : curriculum.nameEn })),
+                            ...(curriculums ?? []).map((curriculum) => ({ value: locale === 'ar' ? curriculum.nameAr : curriculum.nameEn, label: locale === 'ar' ? curriculum.nameAr : curriculum.nameEn })),
                         ],
                     },
                 ]}
                 onAdd={() => router.push("/levels/new")}
                 addButtonLabel="Add Level"
-            />
-
-            <DeleteDialog
-                open={deleteDialog.open}
-                onOpenChange={(open) => setDeleteDialog({ open, item: open ? deleteDialog.item : null })}
-                title="Delete Level"
-                itemName={deleteDialog.item?.nameEn}
-                onConfirm={handleDelete}
             />
         </AdminLayout>
     )

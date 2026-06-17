@@ -8,51 +8,45 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { Badge } from "@/components/ui/badge"
+import { eq, useLiveQuery } from "@tanstack/react-db"
+import { subjectCollection, subjectWithUnitsCount } from "@/collections/subjects"
+import { gradeCollection } from "@/collections/grades"
+import { useLocale } from "@/lib/locale-context"
+import { toast } from "sonner"
 
 interface Subject {
-    id: string
-    name: string
+    id: number
+    nameEn: string
     nameAr: string
     grade: string
-    gradeId: string
-    active: boolean
-    order: number
+    gradeId: number | null
+    isActive: boolean
     unitsCount: number
 }
 
-const mockSubjects: Subject[] = [
-    { id: "1", name: "Mathematics", nameAr: "الرياضيات", grade: "Grade 10", gradeId: "6", active: true, order: 1, unitsCount: 8 },
-    { id: "2", name: "Physics", nameAr: "الفيزياء", grade: "Grade 10", gradeId: "6", active: true, order: 2, unitsCount: 6 },
-    { id: "3", name: "Chemistry", nameAr: "الكيمياء", grade: "Grade 10", gradeId: "6", active: true, order: 3, unitsCount: 7 },
-    { id: "4", name: "Biology", nameAr: "الأحياء", grade: "Grade 10", gradeId: "6", active: true, order: 4, unitsCount: 5 },
-    { id: "5", name: "English Language", nameAr: "اللغة الإنجليزية", grade: "Grade 10", gradeId: "6", active: true, order: 5, unitsCount: 10 },
-    { id: "6", name: "Arabic Language", nameAr: "اللغة العربية", grade: "Grade 10", gradeId: "6", active: true, order: 6, unitsCount: 8 },
-    { id: "7", name: "Computer Science", nameAr: "علوم الحاسوب", grade: "Grade 10", gradeId: "6", active: false, order: 7, unitsCount: 4 },
-    { id: "8", name: "History", nameAr: "التاريخ", grade: "Grade 7", gradeId: "4", active: true, order: 8, unitsCount: 6 },
-]
-
 export default function SubjectsPage() {
     const router = useRouter()
-    const [subjects, setSubjects] = React.useState(mockSubjects)
+    const { locale } = useLocale()
     const [deleteDialog, setDeleteDialog] = React.useState<{ open: boolean; item: Subject | null }>({
         open: false,
         item: null,
     })
 
+    const { data: subjects } = useLiveQuery(q => q.from({ subjects: subjectWithUnitsCount })
+        .join({ grades: gradeCollection }, ({ subjects, grades }) => eq(subjects.gradeId, grades.id), 'left')
+        .select(({ subjects, grades }) => ({
+            ...subjects,
+            grade: locale === 'ar' ? grades?.nameAr ?? '' : grades?.nameEn ?? '',
+        })), [locale]
+    )
+
+    const { data: grades } = useLiveQuery(q => q.from({ grades: gradeCollection }))
+
     const columns: ColumnDef<Subject>[] = [
         {
-            accessorKey: "order",
-            header: ({ column }) => <SortableHeader column={column} title="Order" />,
-            cell: ({ row }) => (
-                <div className="flex h-8 w-8 items-center justify-center rounded bg-secondary text-sm font-medium text-foreground">
-                    {row.original.order}
-                </div>
-            ),
-        },
-        {
-            accessorKey: "name",
+            accessorKey: "nameEn",
             header: ({ column }) => <SortableHeader column={column} title="Name (EN)" />,
-            cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span>,
+            cell: ({ row }) => <span className="font-medium text-foreground">{row.original.nameEn}</span>,
         },
         {
             accessorKey: "nameAr",
@@ -63,9 +57,9 @@ export default function SubjectsPage() {
             accessorKey: "grade",
             header: "Grade",
             cell: ({ row }) => (
-                <Badge variant="outline" className="bg-chart-4/10 text-chart-4 border-chart-4/20">
-                    {row.original.grade}
-                </Badge>
+                row.original.grade
+                    ? <Badge variant="outline" className="bg-chart-4/10 text-chart-4 border-chart-4/20">{row.original.grade}</Badge>
+                    : <span className="text-muted-foreground">—</span>
             ),
         },
         {
@@ -76,23 +70,26 @@ export default function SubjectsPage() {
         {
             accessorKey: "active",
             header: "Status",
-            cell: ({ row }) => <StatusCell active={row.original.active} />,
+            cell: ({ row }) => <StatusCell active={row.original.isActive} />,
         },
         {
             id: "actions",
             cell: ({ row }) => (
                 <ActionsCell
-                    onView={() => router.push(`/subjects/${row.original.id}`)}
                     onEdit={() => router.push(`/subjects/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, item: row.original })}
                     onToggleStatus={() => {
-                        setSubjects((prev) =>
-                            prev.map((s) =>
-                                s.id === row.original.id ? { ...s, active: !s.active } : s
-                            )
-                        )
+                        // Subjects have no toggle endpoint; flip isActive via PUT update.
+                        const tx = subjectCollection.update(row.original.id, draft => {
+                            draft.isActive = !row.original.isActive
+                        })
+                        tx.isPersisted.promise.then(result => {
+                            if (result.state === "failed") {
+                                toast.error(result.error?.message ?? "Failed to update subject")
+                            }
+                        })
                     }}
-                    isActive={row.original.active}
+                    isActive={row.original.isActive}
                 />
             ),
         },
@@ -100,7 +97,16 @@ export default function SubjectsPage() {
 
     const handleDelete = async () => {
         if (deleteDialog.item) {
-            setSubjects((prev) => prev.filter((s) => s.id !== deleteDialog.item!.id))
+            const tx = subjectCollection.delete(deleteDialog.item.id)
+            tx.isPersisted.promise.then(result => {
+                if (result.state === "completed") {
+                    setDeleteDialog({ open: false, item: null })
+                }
+                if (result.state === "failed") {
+                    // e.g. 400 "Cannot delete subject with existing content units"
+                    toast.error(result.error?.message ?? "Failed to delete subject")
+                }
+            })
         }
     }
 
@@ -115,15 +121,14 @@ export default function SubjectsPage() {
                 columns={columns}
                 data={subjects}
                 title="Subjects"
-                searchKey="name"
+                searchKey={locale === 'ar' ? 'nameAr' : 'nameEn'}
                 searchPlaceholder="Search subjects..."
                 filters={[
                     {
                         key: "grade",
                         label: "Grade",
                         options: [
-                            { value: "Grade 7", label: "Grade 7" },
-                            { value: "Grade 10", label: "Grade 10" },
+                            ...(grades ?? []).map((grade) => ({ value: locale === 'ar' ? grade.nameAr : grade.nameEn, label: locale === 'ar' ? grade.nameAr : grade.nameEn })),
                         ],
                     },
                 ]}
@@ -135,7 +140,7 @@ export default function SubjectsPage() {
                 open={deleteDialog.open}
                 onOpenChange={(open) => setDeleteDialog({ open, item: open ? deleteDialog.item : null })}
                 title="Delete Subject"
-                itemName={deleteDialog.item?.name}
+                itemName={locale === 'ar' ? deleteDialog.item?.nameAr : deleteDialog.item?.nameEn}
                 onConfirm={handleDelete}
             />
         </AdminLayout>

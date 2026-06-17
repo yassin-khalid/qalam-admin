@@ -5,55 +5,57 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ColumnDef } from "@tanstack/react-table"
 import { AdminLayout } from "@/components/admin/admin-layout"
-import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
-import { DeleteDialog } from "@/components/admin/delete-dialog"
+import { DataTable, StatusCell, SortableHeader } from "@/components/admin/data-table"
 import { Badge } from "@/components/ui/badge"
+import { eq, useLiveQuery } from "@tanstack/react-db"
+import { lessonCollection } from "@/collections/lessons"
+import { unitCollection } from "@/collections/units"
+import { subjectCollection } from "@/collections/subjects"
+import { useLocale } from "@/lib/locale-context"
 
 interface Lesson {
-    id: string
-    name: string
+    id: number
+    nameEn: string
     nameAr: string
     unit: string
-    unitId: string
+    unitId: number
     subject: string
-    active: boolean
-    order: number
-    duration: string
+    orderIndex: number
+    isActive: boolean
 }
-
-const mockLessons: Lesson[] = [
-    { id: "1", name: "Introduction to Variables", nameAr: "مقدمة للمتغيرات", unit: "Algebra Fundamentals", unitId: "1", subject: "Mathematics", active: true, order: 1, duration: "45 min" },
-    { id: "2", name: "Linear Equations", nameAr: "المعادلات الخطية", unit: "Algebra Fundamentals", unitId: "1", subject: "Mathematics", active: true, order: 2, duration: "50 min" },
-    { id: "3", name: "Quadratic Equations", nameAr: "المعادلات التربيعية", unit: "Algebra Fundamentals", unitId: "1", subject: "Mathematics", active: true, order: 3, duration: "55 min" },
-    { id: "4", name: "Points and Lines", nameAr: "النقاط والخطوط", unit: "Geometry Basics", unitId: "2", subject: "Mathematics", active: true, order: 1, duration: "40 min" },
-    { id: "5", name: "Triangles", nameAr: "المثلثات", unit: "Geometry Basics", unitId: "2", subject: "Mathematics", active: true, order: 2, duration: "45 min" },
-    { id: "6", name: "Newton's Laws", nameAr: "قوانين نيوتن", unit: "Mechanics", unitId: "4", subject: "Physics", active: true, order: 1, duration: "60 min" },
-    { id: "7", name: "Forces and Motion", nameAr: "القوى والحركة", unit: "Mechanics", unitId: "4", subject: "Physics", active: false, order: 2, duration: "55 min" },
-    { id: "8", name: "Work and Energy", nameAr: "الشغل والطاقة", unit: "Mechanics", unitId: "4", subject: "Physics", active: true, order: 3, duration: "50 min" },
-]
 
 export default function LessonsPage() {
     const router = useRouter()
-    const [lessons, setLessons] = React.useState(mockLessons)
-    const [deleteDialog, setDeleteDialog] = React.useState<{ open: boolean; item: Lesson | null }>({
-        open: false,
-        item: null,
-    })
+    const { locale } = useLocale()
 
+    const { data: lessons } = useLiveQuery(q => q.from({ lessons: lessonCollection })
+        .join({ units: unitCollection }, ({ lessons, units }) => eq(lessons.unitId, units.id), 'left')
+        .join({ subjects: subjectCollection }, ({ units, subjects }) => eq(units?.subjectId, subjects.id), 'left')
+        .select(({ lessons, units, subjects }) => ({
+            ...lessons,
+            unit: locale === 'ar' ? units?.nameAr ?? '' : units?.nameEn ?? '',
+            subject: locale === 'ar' ? subjects?.nameAr ?? '' : subjects?.nameEn ?? '',
+        })), [locale]
+    )
+
+    const { data: units } = useLiveQuery(q => q.from({ units: unitCollection }))
+    const { data: subjects } = useLiveQuery(q => q.from({ subjects: subjectCollection }))
+
+    // Lessons are create + list only — no update/delete/toggle actions (CRUD guide §13).
     const columns: ColumnDef<Lesson>[] = [
         {
-            accessorKey: "order",
+            accessorKey: "orderIndex",
             header: ({ column }) => <SortableHeader column={column} title="Order" />,
             cell: ({ row }) => (
                 <div className="flex h-8 w-8 items-center justify-center rounded bg-secondary text-sm font-medium text-foreground">
-                    {row.original.order}
+                    {row.original.orderIndex}
                 </div>
             ),
         },
         {
-            accessorKey: "name",
+            accessorKey: "nameEn",
             header: ({ column }) => <SortableHeader column={column} title="Name (EN)" />,
-            cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span>,
+            cell: ({ row }) => <span className="font-medium text-foreground">{row.original.nameEn}</span>,
         },
         {
             accessorKey: "nameAr",
@@ -64,53 +66,22 @@ export default function LessonsPage() {
             accessorKey: "unit",
             header: "Unit",
             cell: ({ row }) => (
-                <Badge variant="outline" className="bg-chart-1/10 text-chart-1 border-chart-1/20">
-                    {row.original.unit}
-                </Badge>
+                row.original.unit
+                    ? <Badge variant="outline" className="bg-chart-1/10 text-chart-1 border-chart-1/20">{row.original.unit}</Badge>
+                    : <span className="text-muted-foreground">—</span>
             ),
         },
         {
             accessorKey: "subject",
             header: "Subject",
-            cell: ({ row }) => (
-                <span className="text-muted-foreground">{row.original.subject}</span>
-            ),
-        },
-        {
-            accessorKey: "duration",
-            header: "Duration",
-            cell: ({ row }) => <span className="text-muted-foreground">{row.original.duration}</span>,
+            cell: ({ row }) => <span className="text-muted-foreground">{row.original.subject || "—"}</span>,
         },
         {
             accessorKey: "active",
             header: "Status",
-            cell: ({ row }) => <StatusCell active={row.original.active} />,
-        },
-        {
-            id: "actions",
-            cell: ({ row }) => (
-                <ActionsCell
-                    onView={() => router.push(`/lessons/${row.original.id}`)}
-                    onEdit={() => router.push(`/lessons/${row.original.id}/edit`)}
-                    onDelete={() => setDeleteDialog({ open: true, item: row.original })}
-                    onToggleStatus={() => {
-                        setLessons((prev) =>
-                            prev.map((l) =>
-                                l.id === row.original.id ? { ...l, active: !l.active } : l
-                            )
-                        )
-                    }}
-                    isActive={row.original.active}
-                />
-            ),
+            cell: ({ row }) => <StatusCell active={row.original.isActive} />,
         },
     ]
-
-    const handleDelete = async () => {
-        if (deleteDialog.item) {
-            setLessons((prev) => prev.filter((l) => l.id !== deleteDialog.item!.id))
-        }
-    }
 
     return (
         <AdminLayout
@@ -123,37 +94,26 @@ export default function LessonsPage() {
                 columns={columns}
                 data={lessons}
                 title="Lessons"
-                searchKey="name"
+                searchKey={locale === 'ar' ? 'nameAr' : 'nameEn'}
                 searchPlaceholder="Search lessons..."
                 filters={[
                     {
                         key: "subject",
                         label: "Subject",
                         options: [
-                            { value: "Mathematics", label: "Mathematics" },
-                            { value: "Physics", label: "Physics" },
+                            ...(subjects ?? []).map((s) => ({ value: locale === 'ar' ? s.nameAr : s.nameEn, label: locale === 'ar' ? s.nameAr : s.nameEn })),
                         ],
                     },
                     {
                         key: "unit",
                         label: "Unit",
                         options: [
-                            { value: "Algebra Fundamentals", label: "Algebra Fundamentals" },
-                            { value: "Geometry Basics", label: "Geometry Basics" },
-                            { value: "Mechanics", label: "Mechanics" },
+                            ...(units ?? []).map((u) => ({ value: locale === 'ar' ? u.nameAr : u.nameEn, label: locale === 'ar' ? u.nameAr : u.nameEn })),
                         ],
                     },
                 ]}
                 onAdd={() => router.push("/lessons/new")}
                 addButtonLabel="Add Lesson"
-            />
-
-            <DeleteDialog
-                open={deleteDialog.open}
-                onOpenChange={(open) => setDeleteDialog({ open, item: open ? deleteDialog.item : null })}
-                title="Delete Lesson"
-                itemName={deleteDialog.item?.name}
-                onConfirm={handleDelete}
             />
         </AdminLayout>
     )

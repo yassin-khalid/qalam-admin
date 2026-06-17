@@ -20,6 +20,8 @@ import {
   IconFolder,
   IconSquareCheck,
   IconSquare,
+  IconNotebook,
+  IconPlayerSkipForward,
 } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 import { useLocale } from "@/lib/locale-context"
@@ -57,13 +59,28 @@ import { EducationDomainItem } from "@/collections/domain"
 import { toast } from "sonner"
 
 // Types
-type HierarchyLevel = "Domain" | "Curriculum" | "Level" | "Grade" | "Subject" | "Term" | "Unit"
+type HierarchyLevel = "Domain" | "Curriculum" | "Level" | "Grade" | "Subject" | "Term" | "Unit" | "Lesson"
 
 interface Option {
   id: number
   nameEn: string
   nameAr: string
   code: string | null
+  isActive?: boolean
+  orderIndex?: number
+}
+
+// Full entity shape returned by GET-by-id (Domain / Curriculum / Subject), used to
+// prefill the edit dialog with optional fields the slim filter-options list omits.
+interface EntityDetail {
+  nameEn?: string
+  nameAr?: string
+  code?: string | null
+  country?: string | null
+  descriptionEn?: string | null
+  descriptionAr?: string | null
+  isActive?: boolean
+  orderIndex?: number
 }
 
 interface Domain {
@@ -81,6 +98,14 @@ interface FilterState {
   gradeId: number | null
   subjectId: number | null
   termIds: number[] | null
+  // Standard-path content selection
+  contentUnitId: number | null
+  lessonIds: number[] | null
+  skipLessons: boolean
+  // Quran-only (echo of the request params; not used to filter units)
+  quranContentTypeId: number | null
+  quranLevelId: number | null
+  unitTypeCode: UnitTypeCode | null
 }
 
 interface HierarchyData {
@@ -200,15 +225,35 @@ const levelConfigs: LevelConfig[] = [
     pluralEn: "Units",
     pluralAr: "الوحدات",
   },
+  {
+    key: "Lesson",
+    icon: IconNotebook,
+    color: "text-teal-400",
+    bgColor: "bg-teal-500/10",
+    gradient: "from-teal-500 to-emerald-500",
+    labelEn: "Lesson",
+    labelAr: "الدرس",
+    pluralEn: "Lessons",
+    pluralAr: "الدروس",
+  },
 ]
 
 const getConfig = (level: HierarchyLevel) => levelConfigs.find(c => c.key === level) || levelConfigs[0]
 
-// Get parent level for a given level
-const getParentLevel = (level: HierarchyLevel): HierarchyLevel | null => {
-  const hierarchy: HierarchyLevel[] = ["Domain", "Curriculum", "Level", "Grade", "Subject", "Term", "Unit"]
-  const index = hierarchy.indexOf(level)
-  return index > 0 ? hierarchy[index - 1] : null
+// Which levels expose which REST operations (see Education-Management-CRUD.md §13).
+// Terms have no REST API at all; Levels/Grades/Units are create-only; Lessons are
+// created from a separate flow. Only Domain/Curriculum/Subject support update + delete.
+const CREATABLE_LEVELS: HierarchyLevel[] = ["Domain", "Curriculum", "Level", "Grade", "Subject", "Unit"]
+const EDITABLE_LEVELS: HierarchyLevel[] = ["Domain", "Curriculum", "Subject"]
+const DELETABLE_LEVELS: HierarchyLevel[] = ["Domain", "Curriculum", "Subject"]
+
+// Content-unit type is derived from the domain (units are not created for Quran here —
+// Quran surahs/parts are seeded reference data).
+const getUnitTypeCode = (domainCode: string): string => {
+  switch (domainCode) {
+    case "language": return "LanguageModule"
+    default: return "SchoolUnit"
+  }
 }
 
 // Build query string from params - accumulative (DomainId is always required)
@@ -224,6 +269,12 @@ function buildFilterQueryString(params: FilterParams): string {
   if (params.GradeId) searchParams.set("GradeId", params.GradeId.toString())
   if (params.TermIds) params.TermIds.forEach(termId => searchParams.append("TermIds", termId.toString()))
   if (params.SubjectId) searchParams.set("SubjectId", params.SubjectId.toString())
+
+  // Unit -> Lesson step (standard path): a chosen unit advances past nextStep "Unit",
+  // then lessons are picked (or skipped) to reach "Done".
+  if (params.ContentUnitId) searchParams.set("ContentUnitId", params.ContentUnitId.toString())
+  if (params.LessonIds) params.LessonIds.forEach(lessonId => searchParams.append("LessonIds", lessonId.toString()))
+  if (params.SkipLessons) searchParams.set("SkipLessons", "true")
 
   // Quran-specific params (ignored by the API for non-Quran domains)
   if (params.UnitTypeCode) searchParams.set("UnitTypeCode", params.UnitTypeCode)
@@ -259,6 +310,10 @@ interface FilterParams {
   GradeId?: number
   SubjectId?: number
   TermIds?: number[]
+  // Standard-path content selection (not used by Quran)
+  ContentUnitId?: number
+  LessonIds?: number[]
+  SkipLessons?: boolean
   // Quran-only (ignored by the API for other domains)
   UnitTypeCode?: UnitTypeCode
   PageNumber?: number
@@ -268,15 +323,17 @@ interface FilterParams {
 async function fetchHierarchy(params: FilterParams): Promise<{ data: HierarchyData }> {
   const queryString = buildFilterQueryString(params)
 
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/filter-options${queryString}`, {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Education/filter-options${queryString}`, {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${localStorage.getItem('access_token')}`
     }
   })
   const data: ApiResponse<HierarchyData> = await response.json()
-  if (!data.succeeded)
-    throw new Error('Failed to fetch filter data')
+  if (!response.ok || !data.succeeded || !data.data)
+    // Surface the server message (e.g. "DomainId is required",
+    // "LevelId is required before selecting Grade", "Quran subject not found").
+    throw new Error(data.message || 'Failed to fetch filter data')
   return {
     data: data.data
   }
@@ -304,6 +361,8 @@ export function HierarchyManager() {
   const [breadcrumb, setBreadcrumb] = React.useState<BreadcrumbItem[]>([])
   const [selectedTerms, setSelectedTerms] = React.useState<Option[]>([])
   const [isTermSelectMode, setIsTermSelectMode] = React.useState(false)
+  const [selectedLessons, setSelectedLessons] = React.useState<Option[]>([])
+  const [isLessonSelectMode, setIsLessonSelectMode] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
 
   // Quran-specific state (Quran lists units directly, paginated, split by unit type)
@@ -322,6 +381,11 @@ export function HierarchyManager() {
   const [formNameEn, setFormNameEn] = React.useState("")
   const [formNameAr, setFormNameAr] = React.useState("")
   const [formIsActive, setFormIsActive] = React.useState(true)
+  const [formCode, setFormCode] = React.useState("")            // Domain only (required)
+  const [formCountry, setFormCountry] = React.useState("")      // Curriculum only
+  const [formDescriptionEn, setFormDescriptionEn] = React.useState("")
+  const [formDescriptionAr, setFormDescriptionAr] = React.useState("")
+  const [formOrderIndex, setFormOrderIndex] = React.useState(1) // Level / Grade / Unit
 
   // Load domains on mount
   React.useEffect(() => {
@@ -354,8 +418,17 @@ export function HierarchyManager() {
         setIsTermSelectMode(false)
         setSelectedTerms([])
       }
+
+      // Lesson is an optional multi-select step (standard path, after a unit is chosen)
+      if (response.data.nextStep === "Lesson") {
+        setIsLessonSelectMode(true)
+      } else {
+        setIsLessonSelectMode(false)
+        setSelectedLessons([])
+      }
     } catch (error) {
       console.error("Failed to load hierarchy:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to load filter data")
     } finally {
       setHierarchyLoading(false)
     }
@@ -366,7 +439,8 @@ export function HierarchyManager() {
   const buildFilterParams = (
     items: BreadcrumbItem[],
     domain: Domain,
-    quranOverrides?: { unitType?: UnitTypeCode; page?: number }
+    quranOverrides?: { unitType?: UnitTypeCode; page?: number },
+    skipLessons?: boolean
   ): FilterParams => {
     const params: FilterParams = { DomainId: domain.id }
 
@@ -377,8 +451,13 @@ export function HierarchyManager() {
         case "Grade": params.GradeId = item.id; break
         case "Subject": params.SubjectId = item.id; break
         case "Term": params.TermIds = item.ids || [item.id]; break
+        // Quran units are terminal; only the standard path advances past Unit.
+        case "Unit": if (domain.code !== "quran") params.ContentUnitId = item.id; break
+        case "Lesson": params.LessonIds = item.ids || [item.id]; break
       }
     }
+
+    if (skipLessons) params.SkipLessons = true
 
     if (domain.code === "quran") {
       params.UnitTypeCode = quranOverrides?.unitType ?? quranUnitType
@@ -395,6 +474,8 @@ export function HierarchyManager() {
     setBreadcrumb([])
     setSelectedTerms([])
     setIsTermSelectMode(false)
+    setSelectedLessons([])
+    setIsLessonSelectMode(false)
     setQuranUnitType("QuranPart")
     setPageNumber(1)
     loadHierarchy(buildFilterParams([], domain, { unitType: "QuranPart", page: 1 }))
@@ -426,6 +507,17 @@ export function HierarchyManager() {
         setSelectedTerms(selectedTerms.filter(t => t.id !== option.id))
       } else {
         setSelectedTerms([...selectedTerms, option])
+      }
+      return
+    }
+
+    // For Lessons, toggle selection in multi-select mode
+    if (level === "Lesson" && isLessonSelectMode) {
+      const exists = selectedLessons.find(l => l.id === option.id)
+      if (exists) {
+        setSelectedLessons(selectedLessons.filter(l => l.id !== option.id))
+      } else {
+        setSelectedLessons([...selectedLessons, option])
       }
       return
     }
@@ -464,6 +556,35 @@ export function HierarchyManager() {
     loadHierarchy(params)
   }
 
+  // Confirm lesson selection (sends lessonIds -> Done)
+  const handleConfirmLessons = () => {
+    if (!selectedDomain || selectedLessons.length === 0) return
+
+    const lessonItem: BreadcrumbItem = {
+      level: "Lesson",
+      id: selectedLessons[0].id,
+      ids: selectedLessons.map(l => l.id),
+      nameEn: selectedLessons.map(l => l.nameEn).join(", "),
+      nameAr: selectedLessons.map(l => l.nameAr).join("، "),
+    }
+
+    const newBreadcrumbs = [...breadcrumb, lessonItem]
+    setBreadcrumb(newBreadcrumbs)
+    setIsLessonSelectMode(false)
+
+    const params = buildFilterParams(newBreadcrumbs, selectedDomain)
+    loadHierarchy(params)
+  }
+
+  // Skip the lesson step (sends skipLessons=true -> Done)
+  const handleSkipLessons = () => {
+    if (!selectedDomain) return
+    setIsLessonSelectMode(false)
+    setSelectedLessons([])
+    const params = buildFilterParams(breadcrumb, selectedDomain, undefined, true)
+    loadHierarchy(params)
+  }
+
   // Navigate to breadcrumb index
   const handleNavigate = (index: number) => {
     if (!selectedDomain) return
@@ -473,6 +594,8 @@ export function HierarchyManager() {
       setBreadcrumb([])
       setSelectedTerms([])
       setIsTermSelectMode(false)
+      setSelectedLessons([])
+      setIsLessonSelectMode(false)
       setPageNumber(1)
       loadHierarchy(buildFilterParams([], selectedDomain, { unitType: quranUnitType, page: 1 }))
       return
@@ -481,6 +604,7 @@ export function HierarchyManager() {
     const newBreadcrumbs = breadcrumb.slice(0, index + 1)
     setBreadcrumb(newBreadcrumbs)
     setSelectedTerms([])
+    setSelectedLessons([])
 
     const params = buildFilterParams(newBreadcrumbs, selectedDomain)
     loadHierarchy(params)
@@ -514,18 +638,53 @@ export function HierarchyManager() {
     setFormNameEn("")
     setFormNameAr("")
     setFormIsActive(true)
+    setFormCode("")
+    setFormCountry("")
+    setFormDescriptionEn("")
+    setFormDescriptionAr("")
+    setFormOrderIndex(1)
     setShowAddDialog(true)
   }
 
-  // Handle edit item
-  const handleEdit = (level: HierarchyLevel | null, item: Option) => {
+  // Handle edit item. Prefill optimistically from the slim option, then fetch the full
+  // entity (GET by id) so optional fields — country, descriptions — aren't nulled on save.
+  const handleEdit = async (level: HierarchyLevel | null, item: Option) => {
     if (!level) return
     setAddLevel(level)
     setSelectedItem(item)
     setFormNameEn(item.nameEn)
     setFormNameAr(item.nameAr)
-    setFormIsActive(true)
+    setFormIsActive(item.isActive ?? true)
+    setFormCode(item.code ?? "")
+    setFormCountry("")
+    setFormDescriptionEn("")
+    setFormDescriptionAr("")
+    setFormOrderIndex(item.orderIndex ?? 1)
     setShowEditDialog(true)
+
+    try {
+      const res = await fetch(buildEntityUrl(level, item.id), {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("access_token")}`,
+          "Accept-Language": locale === "ar" ? "ar-EG" : "en-US",
+        },
+      })
+      const json: ApiResponse<EntityDetail> = await res.json()
+      if (res.ok && json.succeeded && json.data) {
+        const d = json.data
+        setFormNameEn(d.nameEn ?? item.nameEn)
+        setFormNameAr(d.nameAr ?? item.nameAr)
+        setFormCode(d.code ?? item.code ?? "")
+        setFormCountry(d.country ?? "")
+        setFormDescriptionEn(d.descriptionEn ?? "")
+        setFormDescriptionAr(d.descriptionAr ?? "")
+        setFormIsActive(d.isActive ?? true)
+        setFormOrderIndex(d.orderIndex ?? item.orderIndex ?? 1)
+      }
+    } catch {
+      // keep the optimistic values from the slim option
+    }
   }
 
   // Handle delete item
@@ -534,78 +693,102 @@ export function HierarchyManager() {
     setShowDeleteDialog(true)
   }
 
+  // Build the request body for a given level, matching the documented API shape
+  // (Education-Management-CRUD.md §6–§10). Each entity only sends the FKs/fields it accepts.
+  const buildEntityPayload = (level: HierarchyLevel): Record<string, unknown> => {
+    const curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
+    const levelId = breadcrumb.find(b => b.level === "Level")?.id
+    const gradeId = breadcrumb.find(b => b.level === "Grade")?.id
+    const subjectId = breadcrumb.find(b => b.level === "Subject")?.id
+    const termItem = breadcrumb.find(b => b.level === "Term")
+    const termId = termItem?.ids?.[0] ?? termItem?.id ?? null
+
+    switch (level) {
+      case "Domain":
+        return {
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          code: formCode,
+          descriptionEn: formDescriptionEn || null,
+          descriptionAr: formDescriptionAr || null,
+          isActive: formIsActive,
+        }
+      case "Curriculum":
+        return {
+          domainId: selectedDomain?.id,
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          country: formCountry || null,
+          descriptionEn: formDescriptionEn || null,
+          descriptionAr: formDescriptionAr || null,
+          isActive: formIsActive,
+        }
+      case "Level":
+        return {
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          domainId: selectedDomain?.id,
+          curriculumId,
+          orderIndex: formOrderIndex,
+          isActive: formIsActive,
+        }
+      case "Grade":
+        return {
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          levelId,
+          orderIndex: formOrderIndex,
+          isActive: formIsActive,
+        }
+      case "Subject":
+        return {
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          descriptionEn: formDescriptionEn || null,
+          descriptionAr: formDescriptionAr || null,
+          domainId: selectedDomain?.id,
+          curriculumId,
+          levelId,
+          gradeId,
+          termId,
+          isActive: formIsActive,
+        }
+      case "Unit":
+        // Content-unit shape per §10: subjectId + termId + orderIndex + unitTypeCode.
+        return {
+          nameEn: formNameEn,
+          nameAr: formNameAr,
+          subjectId,
+          termId,
+          orderIndex: formOrderIndex,
+          unitTypeCode: getUnitTypeCode(selectedDomain?.code ?? ""),
+        }
+      default:
+        return { nameEn: formNameEn, nameAr: formNameAr }
+    }
+  }
+
+  // Resolve the REST endpoint for a level. `id` appends the path segment for PUT/DELETE.
+  const buildEntityUrl = (level: HierarchyLevel, id?: number): string => {
+    const base = `${process.env.NEXT_PUBLIC_API_URL}`
+    const suffix = id != null ? `/${id}` : ""
+    switch (level) {
+      case "Domain": return `${base}/Api/V1/Education/Domains${suffix}`
+      case "Curriculum": return `${base}/Api/V1/Curriculum${suffix}`
+      case "Level": return `${base}/Api/V1/Education/Levels${suffix}`
+      case "Grade": return `${base}/Api/V1/Education/Grades${suffix}`
+      case "Subject": return `${base}/Api/V1/Subjects${suffix}`
+      case "Unit": return `${base}/Api/V1/Content/Units${suffix}`
+      default: return `${base}/Api/V1/Education/Domains${suffix}`
+    }
+  }
+
   // Submit add form
   const submitAdd = async () => {
-    const parentLevel = getParentLevel(addLevel)
-    let url = `${process.env.NEXT_PUBLIC_API_URL}`
+    if (!selectedDomain) return
+    const payload = buildEntityPayload(addLevel)
+    const url = buildEntityUrl(addLevel)
 
-    // Build the payload with parentId
-    const payload: Record<string, unknown> = {
-      nameEn: formNameEn,
-      nameAr: formNameAr,
-      isActive: formIsActive,
-    }
-
-    // Add parent reference based on level
-    if (parentLevel === "Domain" || addLevel === "Curriculum") {
-      payload.domainId = selectedDomain?.id
-    }
-    if (addLevel === "Level") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-    }
-    if (addLevel === "Grade") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-    }
-    if (addLevel === "Subject") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-    }
-    if (addLevel === "Term") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-      payload.subjectId = breadcrumb.find(b => b.level === "Subject")?.id
-    }
-    if (addLevel === "Unit") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-      payload.subjectId = breadcrumb.find(b => b.level === "Subject")?.id
-      payload.termIds = breadcrumb.find(b => b.level === "Term")?.ids
-    }
-
-    switch (addLevel) {
-      case "Domain":
-        url += `/Api/V1/Education/Domains`
-        break
-      case "Curriculum":
-        url += `/Api/V1/Education/Curriculums`
-        break
-      case "Level":
-        url += `/Api/V1/Education/Levels`
-        break
-      case "Grade":
-        url += `/Api/V1/Education/Grades`
-        break
-      case "Subject":
-        url += `/Api/V1/Subjects`
-        break
-      case "Term":
-        url += `/Api/V1/Education/Terms`
-        break
-      case "Unit":
-        url += `/Api/V1/Content/Units`
-        break
-    }
-    // TODO: Call real API with payload
-    // console.log("Adding:", { level: addLevel, payload })
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -616,7 +799,7 @@ export function HierarchyManager() {
       },
       body: JSON.stringify(payload),
     })
-    const json: ApiResponse<any> = await response.json()
+    const json: ApiResponse<unknown> = await response.json()
     if (!json.succeeded) {
       toast.error(json.message)
       return
@@ -625,86 +808,18 @@ export function HierarchyManager() {
     setShowAddDialog(false)
 
     // Refresh data
-    if (selectedDomain) {
-      const params = buildFilterParams(breadcrumb, selectedDomain)
-      loadHierarchy(params)
-    }
+    const params = buildFilterParams(breadcrumb, selectedDomain)
+    loadHierarchy(params)
   }
 
-  // Submit edit form
+  // Submit edit form (Domain / Curriculum / Subject only — see EDITABLE_LEVELS)
   const submitEdit = async () => {
-    if (!selectedItem || !addLevel) return
-    const parentLevel = getParentLevel(addLevel)
-    let url = `${process.env.NEXT_PUBLIC_API_URL}`
+    if (!selectedItem || !addLevel || !selectedDomain) return
 
-    // Build the payload with parentId
-    const payload: Record<string, unknown> = {
-      nameEn: formNameEn,
-      nameAr: formNameAr,
-      isActive: formIsActive,
-    }
+    // Body mirrors create + the route id (PUT requires body id === route id).
+    const payload = { ...buildEntityPayload(addLevel), id: selectedItem.id }
+    const url = buildEntityUrl(addLevel, selectedItem.id)
 
-    // Add parent reference based on level
-    if (parentLevel === "Domain" || addLevel === "Curriculum") {
-      payload.domainId = selectedDomain?.id
-    }
-    if (addLevel === "Level") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-    }
-    if (addLevel === "Grade") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-    }
-    if (addLevel === "Subject") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-    }
-    if (addLevel === "Term") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-      payload.subjectId = breadcrumb.find(b => b.level === "Subject")?.id
-    }
-    if (addLevel === "Unit") {
-      payload.domainId = selectedDomain?.id
-      payload.curriculumId = breadcrumb.find(b => b.level === "Curriculum")?.id
-      payload.levelId = breadcrumb.find(b => b.level === "Level")?.id
-      payload.gradeId = breadcrumb.find(b => b.level === "Grade")?.id
-      payload.subjectId = breadcrumb.find(b => b.level === "Subject")?.id
-      payload.termIds = breadcrumb.find(b => b.level === "Term")?.ids
-    }
-
-
-    switch (addLevel) {
-      case "Domain":
-        url += `/Api/V1/Education/Domains/${selectedItem.id}`
-        break
-      case "Curriculum":
-        url += `/Api/V1/Education/Curriculums/${selectedItem.id}`
-        break
-      case "Level":
-        url += `/Api/V1/Education/Levels/${selectedItem.id}`
-        break
-      case "Grade":
-        url += `/Api/V1/Education/Grades/${selectedItem.id}`
-        break
-      case "Subject":
-        url += `/Api/V1/Subjects/${selectedItem.id}`
-        break
-      case "Term":
-        url += `/Api/V1/Education/Terms/${selectedItem.id}`
-        break
-      case "Unit":
-        url += `/Api/V1/Content/Units/${selectedItem.id}`
-        break
-    }
-    // TODO: Call real API with payload
-    // console.log("Editing:", payload)
     const response = await fetch(url, {
       method: "PUT",
       headers: {
@@ -715,7 +830,7 @@ export function HierarchyManager() {
       },
       body: JSON.stringify(payload),
     })
-    const json: ApiResponse<any> = await response.json()
+    const json: ApiResponse<unknown> = await response.json()
     if (!json.succeeded) {
       toast.error(json.message)
       return
@@ -724,43 +839,16 @@ export function HierarchyManager() {
     setShowEditDialog(false)
 
     // Refresh data
-    if (selectedDomain) {
-      const params = buildFilterParams(breadcrumb, selectedDomain)
-      loadHierarchy(params)
-    }
+    const params = buildFilterParams(breadcrumb, selectedDomain)
+    loadHierarchy(params)
   }
 
-  // Submit delete
+  // Submit delete (Domain / Curriculum / Subject only — see DELETABLE_LEVELS)
   const submitDelete = async () => {
-
     if (!selectedItem || !hierarchyData) return
 
     const currentLevel = hierarchyData.nextStep as HierarchyLevel
-    let url = `${process.env.NEXT_PUBLIC_API_URL}`
-    switch (currentLevel) {
-      case "Domain":
-        url += `/Api/V1/Education/Domains/${selectedItem.id}`
-        break
-      case "Curriculum":
-        url += `/Api/V1/Education/Curriculums/${selectedItem.id}`
-        break
-      case "Level":
-        url += `/Api/V1/Education/Levels/${selectedItem.id}`
-        break
-      case "Grade":
-        url += `/Api/V1/Education/Grades/${selectedItem.id}`
-        break
-      case "Subject":
-        url += `/Api/V1/Subjects/${selectedItem.id}`
-        break
-      case "Term":
-        url += `/Api/V1/Education/Terms/${selectedItem.id}`
-        break
-      case "Unit":
-        url += `/Api/V1/Content/Units/${selectedItem.id}`
-        break
-    }
-    // console.log("Deleting:", selectedItem?.id)
+    const url = buildEntityUrl(currentLevel, selectedItem.id)
     const response = await fetch(url, {
       method: "DELETE",
       headers: {
@@ -770,7 +858,7 @@ export function HierarchyManager() {
         "Accept-Language": locale === "ar" ? "ar-EG" : "en-US",
       },
     })
-    const json: ApiResponse<any> = await response.json()
+    const json: ApiResponse<unknown> = await response.json()
     if (!json.succeeded) {
       toast.error(json.message)
       return
@@ -901,25 +989,32 @@ export function HierarchyManager() {
     const config = getConfig(level)
     const Icon = config.icon
     const isTermSelected = isTermSelectMode && level === "Term" && selectedTerms.some(t => t.id === option.id)
+    const isLessonSelected = isLessonSelectMode && level === "Lesson" && selectedLessons.some(l => l.id === option.id)
+    const isSelected = isTermSelected || isLessonSelected
+    const inSelectMode = (isTermSelectMode && level === "Term") || (isLessonSelectMode && level === "Lesson")
     const isUnit = level === "Unit"
+    // Quran units are terminal; standard-path units advance (send contentUnitId -> Lesson/Done).
+    const isClickable = !(isUnit && isQuranDomain)
+    // Only Domain/Curriculum/Subject expose update + delete in the API (§13).
+    const canEdit = EDITABLE_LEVELS.includes(level)
+    const canDelete = DELETABLE_LEVELS.includes(level)
 
     return (
       <div
         key={option.id}
-        onClick={() => !isUnit && handleSelectOption(option, level)}
+        onClick={() => isClickable && handleSelectOption(option, level)}
         className={cn(
           "group flex items-center gap-4 p-4 rounded-xl border transition-all duration-200",
-          isTermSelected
+          isSelected
             ? "bg-primary/10 border-primary shadow-lg shadow-primary/10"
             : "bg-card/50 border-border/30 hover:border-primary/30 hover:bg-card",
-          !isUnit && "cursor-pointer",
-          isUnit && "cursor-default"
+          isClickable ? "cursor-pointer" : "cursor-default"
         )}
       >
-        {/* Checkbox for terms */}
-        {isTermSelectMode && level === "Term" && (
+        {/* Checkbox for multi-select steps (terms, lessons) */}
+        {inSelectMode && (
           <div className="shrink-0">
-            {isTermSelected ? (
+            {isSelected ? (
               <IconSquareCheck className="h-5 w-5 text-primary" />
             ) : (
               <IconSquare className="h-5 w-5 text-muted-foreground group-hover:text-primary" />
@@ -942,8 +1037,11 @@ export function HierarchyManager() {
           </p>
         </div>
 
-        {/* Actions */}
+        {/* Actions — only the levels the API supports (Domain/Curriculum/Subject).
+            Levels, Grades, Terms, Units and Lessons have no update/delete endpoint. */}
+        {(canEdit || canDelete) && (
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canEdit && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger
@@ -961,6 +1059,8 @@ export function HierarchyManager() {
               <TooltipContent>{locale === "ar" ? "تعديل" : "Edit"}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          )}
+          {canDelete && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger
@@ -978,10 +1078,12 @@ export function HierarchyManager() {
               <TooltipContent>{locale === "ar" ? "حذف" : "Delete"}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          )}
         </div>
+        )}
 
-        {/* Arrow for non-unit items */}
-        {!isUnit && !isTermSelectMode && (
+        {/* Arrow for clickable, non-multi-select items */}
+        {isClickable && !inSelectMode && (
           <IconChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors rtl:rotate-180" />
         )}
       </div>
@@ -1001,6 +1103,84 @@ export function HierarchyManager() {
         </div>
       ))}
     </div>
+  )
+
+  // Level-specific form fields shared by the Add and Edit dialogs.
+  // Each entity only collects the fields its API accepts (§6–§10).
+  const renderLevelFields = () => (
+    <>
+      {addLevel === "Domain" && (
+        <div className="space-y-2">
+          <Label>{locale === "ar" ? "الرمز" : "Code"}</Label>
+          <Input
+            value={formCode}
+            onChange={(e) => setFormCode(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+            placeholder="school"
+            dir="ltr"
+          />
+          <p className="text-xs text-muted-foreground">
+            {locale === "ar"
+              ? "أحرف إنجليزية صغيرة وأرقام و _ فقط"
+              : "Lowercase letters, numbers and _ only"}
+          </p>
+        </div>
+      )}
+
+      {addLevel === "Curriculum" && (
+        <div className="space-y-2">
+          <Label>{locale === "ar" ? "الدولة" : "Country"}</Label>
+          <Input
+            value={formCountry}
+            onChange={(e) => setFormCountry(e.target.value)}
+            placeholder="SA"
+            dir="ltr"
+          />
+        </div>
+      )}
+
+      {(addLevel === "Level" || addLevel === "Grade" || addLevel === "Unit") && (
+        <div className="space-y-2">
+          <Label>{locale === "ar" ? "الترتيب" : "Order Index"}</Label>
+          <Input
+            type="number"
+            min={0}
+            value={formOrderIndex}
+            onChange={(e) => setFormOrderIndex(Number(e.target.value) || 0)}
+            dir="ltr"
+          />
+        </div>
+      )}
+
+      {(addLevel === "Domain" || addLevel === "Curriculum" || addLevel === "Subject") && (
+        <>
+          <div className="space-y-2">
+            <Label>{locale === "ar" ? "الوصف بالإنجليزية" : "English Description"}</Label>
+            <Input
+              value={formDescriptionEn}
+              onChange={(e) => setFormDescriptionEn(e.target.value)}
+              placeholder={locale === "ar" ? "اختياري" : "Optional"}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>{locale === "ar" ? "الوصف بالعربية" : "Arabic Description"}</Label>
+            <Input
+              value={formDescriptionAr}
+              onChange={(e) => setFormDescriptionAr(e.target.value)}
+              placeholder={locale === "ar" ? "اختياري" : "Optional"}
+              dir="rtl"
+            />
+          </div>
+        </>
+      )}
+
+      {/* Content units have no isActive flag in the API */}
+      {addLevel !== "Unit" && (
+        <div className="flex items-center justify-between">
+          <Label>{locale === "ar" ? "نشط" : "Active"}</Label>
+          <Switch checked={formIsActive} onCheckedChange={setFormIsActive} />
+        </div>
+      )}
+    </>
   )
 
   // ==================== MAIN RENDER ====================
@@ -1075,6 +1255,25 @@ export function HierarchyManager() {
                       </Button>
                     )}
 
+                    {/* Lesson step buttons: confirm selected lessons or skip the step */}
+                    {isLessonSelectMode && (
+                      <>
+                        {selectedLessons.length > 0 && (
+                          <Button onClick={handleConfirmLessons} size="sm" className="gap-2">
+                            <IconCheck className="h-4 w-4" />
+                            {locale === "ar"
+                              ? `تأكيد (${selectedLessons.length})`
+                              : `Confirm (${selectedLessons.length})`
+                            }
+                          </Button>
+                        )}
+                        <Button onClick={handleSkipLessons} size="sm" variant="outline" className="gap-2">
+                          <IconPlayerSkipForward className="h-4 w-4 rtl:rotate-180" />
+                          {locale === "ar" ? "تخطي الدروس" : "Skip Lessons"}
+                        </Button>
+                      </>
+                    )}
+
                     {/* Search */}
                     <div className="relative">
                       <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground rtl:left-auto rtl:right-3" />
@@ -1086,8 +1285,11 @@ export function HierarchyManager() {
                       />
                     </div>
 
-                    {/* Add button */}
-                    {hierarchyData && (
+                    {/* Add button — only for levels the API can create, and never for
+                        Quran units (those are seeded reference data). */}
+                    {hierarchyData &&
+                      CREATABLE_LEVELS.includes(hierarchyData.nextStep as HierarchyLevel) &&
+                      !(hierarchyData.nextStep === "Unit" && isQuranDomain) && (
                       <Button
                         onClick={() => handleAdd(hierarchyData.nextStep as HierarchyLevel)}
                         size="sm"
@@ -1109,6 +1311,8 @@ export function HierarchyManager() {
                     )}>
                       {isTermSelectMode
                         ? (locale === "ar" ? "اختر الفصول الدراسية (متعدد)" : "Select Terms (Multi)")
+                        : isLessonSelectMode
+                        ? (locale === "ar" ? "اختر الدروس (اختياري، متعدد)" : "Select Lessons (Optional, Multi)")
                         : getCurrentLevelLabel()
                       }
                     </Badge>
@@ -1140,10 +1344,73 @@ export function HierarchyManager() {
                   </div>
                 )}
 
+                {/* Quran info panel: auto-selected subject + available content types / levels.
+                    These are informational only — the API echoes quranContentTypeId/quranLevelId
+                    in currentState and does NOT use them to filter the unit list. */}
+                {isQuranDomain && hierarchyData?.nextStep === "Unit" && (
+                  (hierarchyData?.subject ||
+                    (hierarchyData?.rule.requiresQuranContentType && hierarchyData?.contentTypes?.length) ||
+                    (hierarchyData?.rule.requiresQuranLevel && hierarchyData?.levels?.length)) && (
+                    <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+                      {hierarchyData?.subject && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-muted-foreground">
+                            {locale === "ar" ? "المادة" : "Subject"}:
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {locale === "ar" ? hierarchyData.subject.nameAr : hierarchyData.subject.nameEn}
+                          </Badge>
+                        </div>
+                      )}
+                      {hierarchyData?.rule.requiresQuranContentType && (hierarchyData?.contentTypes?.length ?? 0) > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-xs font-semibold text-muted-foreground">
+                            {locale === "ar" ? "أنواع المحتوى" : "Content Types"}
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {hierarchyData?.contentTypes?.map(ct => (
+                              <Badge key={ct.id} variant="outline" className="text-xs">
+                                {locale === "ar" ? ct.nameAr : ct.nameEn}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {hierarchyData?.rule.requiresQuranLevel && (hierarchyData?.levels?.length ?? 0) > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-xs font-semibold text-muted-foreground">
+                            {locale === "ar" ? "المستويات" : "Levels"}
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {hierarchyData?.levels?.map(lv => (
+                              <Badge key={lv.id} variant="outline" className="text-xs">
+                                {locale === "ar" ? lv.nameAr : lv.nameEn}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+
+                {/* Done: terminal state for domains/branches with no content units */}
+                {hierarchyData?.nextStep === "Done" && !hierarchyLoading && (
+                  <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-muted-foreground">
+                    <IconBookmark className="h-10 w-10 mb-3 opacity-50" />
+                    <p className="font-medium">
+                      {locale === "ar" ? "اكتمل التحديد" : "Selection complete"}
+                    </p>
+                    <p className="text-sm">
+                      {locale === "ar" ? "لا توجد وحدات لهذا المسار" : "No units available for this path"}
+                    </p>
+                  </div>
+                )}
+
                 {/* Options list */}
                 {hierarchyLoading ? (
                   renderSkeleton()
-                ) : (
+                ) : hierarchyData?.nextStep === "Done" ? null : (
                   <ScrollArea className="h-[500px] pr-4">
                     <div className="space-y-2">
                       {filteredOptions.length === 0 ? (
@@ -1239,16 +1506,16 @@ export function HierarchyManager() {
                 dir="rtl"
               />
             </div>
-            <div className="flex items-center justify-between">
-              <Label>{locale === "ar" ? "نشط" : "Active"}</Label>
-              <Switch checked={formIsActive} onCheckedChange={setFormIsActive} />
-            </div>
+            {renderLevelFields()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
               {locale === "ar" ? "إلغاء" : "Cancel"}
             </Button>
-            <Button onClick={submitAdd} disabled={!formNameEn || !formNameAr}>
+            <Button
+              onClick={submitAdd}
+              disabled={!formNameEn || !formNameAr || (addLevel === "Domain" && !formCode)}
+            >
               {locale === "ar" ? "إضافة" : "Add"}
             </Button>
           </DialogFooter>
@@ -1279,16 +1546,16 @@ export function HierarchyManager() {
                 dir="rtl"
               />
             </div>
-            <div className="flex items-center justify-between">
-              <Label>{locale === "ar" ? "نشط" : "Active"}</Label>
-              <Switch checked={formIsActive} onCheckedChange={setFormIsActive} />
-            </div>
+            {renderLevelFields()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>
               {locale === "ar" ? "إلغاء" : "Cancel"}
             </Button>
-            <Button onClick={submitEdit}>
+            <Button
+              onClick={submitEdit}
+              disabled={!formNameEn || !formNameAr || (addLevel === "Domain" && !formCode)}
+            >
               {locale === "ar" ? "حفظ" : "Save"}
             </Button>
           </DialogFooter>

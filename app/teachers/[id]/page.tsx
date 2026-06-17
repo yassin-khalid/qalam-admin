@@ -18,6 +18,11 @@ import {
     IconExternalLink,
     IconClock,
     IconAlertCircle,
+    IconBook,
+    IconChevronDown,
+    IconChevronUp,
+    IconCircleMinus,
+    IconArrowBackUp,
 } from "@tabler/icons-react"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -78,6 +83,10 @@ export default function TeacherDetailPage() {
     const [selectedDocument, setSelectedDocument] = React.useState<TeacherDetail['documents'][number] | null>(null)
     const [rejectionReason, setRejectionReason] = React.useState("")
     const [blockReason, setBlockReason] = React.useState("")
+    const [rejectSubjectDialogOpen, setRejectSubjectDialogOpen] = React.useState(false)
+    const [selectedSubject, setSelectedSubject] = React.useState<TeacherSubject | null>(null)
+    const [subjectRejectionReason, setSubjectRejectionReason] = React.useState("")
+    const [expandedSubjects, setExpandedSubjects] = React.useState<Set<number>>(new Set())
 
     // const { data: teacherDocuments } = useLiveQuery(q => q.from({ teacherDocuments: teacherDocumentsCollection(parseInt(params.id as string)) }))
     // const { data: teacherPreview } = useLiveQuery(q => q.from({ teacher: teacherColllection }).where(({ teacher }) => eq(teacher.teacherId, parseInt(params.id as string))).findOne())
@@ -131,6 +140,44 @@ export default function TeacherDetailPage() {
             boolValue?: boolean | null
             selectedOptions?: { value: string; labelAr: string; labelEn: string }[] | null
         }[]
+        subjects?: TeacherSubject[]
+        subjectSummary?: {
+            totalSubjects: number
+            activeSubjects: number
+            inactiveSubjects: number
+            rejectedSubjects: number
+        }
+    }
+
+    type TeacherSubjectUnit = {
+        id: number
+        unitId: number
+        unitNameAr: string
+        unitNameEn: string
+        unitTypeCode: string | null
+        quranContentTypeId: number | null
+        quranContentTypeNameAr: string | null
+        quranContentTypeNameEn: string | null
+        quranLevelId: number | null
+        quranLevelNameAr: string | null
+        quranLevelNameEn: string | null
+    }
+
+    type TeacherSubject = {
+        id: number
+        teacherId: number
+        teacherFullName: string
+        subjectId: number
+        subjectNameAr: string
+        subjectNameEn: string
+        domainCode: string | null
+        canTeachFullSubject: boolean
+        isActive: boolean
+        verificationStatus: number
+        rejectionReason: string | null
+        reviewedAt: string | null
+        createdAt: string
+        units: TeacherSubjectUnit[]
     }
 
     const { data: teacher } = useQuery({
@@ -149,10 +196,13 @@ export default function TeacherDetailPage() {
             })
             // status/location/document verificationStatus arrive as string enums
             // (or numbers) — normalize to the canonical numeric codes the UI expects.
-            type RawTeacherDetail = Omit<TeacherDetail, "status" | "location" | "documents"> & {
+            type RawTeacherDetail = Omit<TeacherDetail, "status" | "location" | "documents" | "subjects"> & {
                 status: string | number
                 location: string | number | boolean | null
                 documents: (Omit<TeacherDetail["documents"][number], "verificationStatus"> & {
+                    verificationStatus: string | number
+                })[]
+                subjects?: (Omit<TeacherSubject, "verificationStatus"> & {
                     verificationStatus: string | number
                 })[]
             }
@@ -168,6 +218,10 @@ export default function TeacherDetailPage() {
                 documents: (data.data.documents ?? []).map((doc) => ({
                     ...doc,
                     verificationStatus: normalizeVerificationStatus(doc.verificationStatus),
+                })),
+                subjects: (data.data.subjects ?? []).map((subject) => ({
+                    ...subject,
+                    verificationStatus: normalizeVerificationStatus(subject.verificationStatus),
                 })),
             } satisfies TeacherDetail
         },
@@ -302,6 +356,112 @@ export default function TeacherDetailPage() {
         },
     })
 
+    // Optimistically patch a single subject in the cached teacher detail. Each
+    // subject command (inactivate/activate/reject/restore) only flips a few
+    // fields, so share the cache surgery and pass the patch per action.
+    const patchSubjectInCache = (subjectId: number, patch: Partial<TeacherSubject>) => {
+        queryClient.setQueryData<TeacherDetail | null>(['teacher', teacherId], (old) => {
+            if (!old) return null
+            return {
+                ...old,
+                subjects: (old.subjects ?? []).map((s) =>
+                    s.id === subjectId ? { ...s, ...patch } : s
+                ),
+            }
+        })
+    }
+
+    const subjectCommand = (
+        action: "Inactivate" | "Activate" | "Reject" | "Restore",
+        body?: Record<string, unknown>,
+    ) => async ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) => {
+        const access_token = localStorage.getItem('access_token');
+        const locale = localStorage.getItem('locale');
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Subjects/${subjectId}/${action}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${access_token}`,
+                'Accept': 'application/json',
+                'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        const data = await response.json() as ApiResponse<string | null>
+        if (!data.succeeded) {
+            throw new Error(data.message);
+        }
+        return typeof data.data === "string" ? data.data : data.message;
+    }
+
+    const { mutate: inactivateSubject } = useMutation({
+        mutationFn: ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) =>
+            subjectCommand("Inactivate")({ teacherId, subjectId }),
+        onMutate: async ({ subjectId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            patchSubjectInCache(subjectId, { isActive: false })
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.subjectInactivatedSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.subjectActionError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
+
+    const { mutate: activateSubject } = useMutation({
+        mutationFn: ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) =>
+            subjectCommand("Activate")({ teacherId, subjectId }),
+        onMutate: async ({ subjectId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            patchSubjectInCache(subjectId, { isActive: true })
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.subjectActivatedSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.subjectActionError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
+
+    const { mutate: rejectSubject } = useMutation({
+        mutationFn: ({ teacherId, subjectId, reason }: { teacherId: number, subjectId: number, reason: string }) =>
+            subjectCommand("Reject", { reason })({ teacherId, subjectId }),
+        onMutate: async ({ subjectId, reason }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            patchSubjectInCache(subjectId, { isActive: false, verificationStatus: 3, rejectionReason: reason })
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.subjectRejectedSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.subjectActionError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
+
+    const { mutate: restoreSubject } = useMutation({
+        mutationFn: ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) =>
+            subjectCommand("Restore")({ teacherId, subjectId }),
+        onMutate: async ({ subjectId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            patchSubjectInCache(subjectId, { isActive: true, verificationStatus: 2, rejectionReason: null })
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.subjectRestoredSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.subjectActionError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
+
     // Activation is automatic on the backend: approving the last required document
     // flips the teacher to Active (see Teacher-Registration-Guide, Step C). Surface
     // that transition with a one-time toast so the admin sees it happen.
@@ -384,6 +544,38 @@ export default function TeacherDetailPage() {
                 return null
         }
     }
+
+    // Subject status derives from BOTH fields: Rejected (3) wins, then inactive,
+    // else active — matches the admin subjects guide status-pill logic.
+    const getSubjectStatusBadge = (subject: TeacherSubject) => {
+        if (subject.verificationStatus === 3) {
+            return (
+                <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
+                    <IconX className="h-3 w-3 me-1" />
+                    {t("teachers.rejected")}
+                </Badge>
+            )
+        }
+        if (!subject.isActive) {
+            return (
+                <Badge variant="outline" className="border-muted-foreground/40 text-muted-foreground bg-muted">
+                    {t("teachers.inactive")}
+                </Badge>
+            )
+        }
+        return (
+            <Badge variant="outline" className="border-success text-success bg-success/10">
+                <IconCheck className="h-3 w-3 me-1" />
+                {t("teachers.active")}
+            </Badge>
+        )
+    }
+
+    const getSubjectName = (subject: TeacherSubject) =>
+        (locale === "ar" ? subject.subjectNameAr : subject.subjectNameEn) || subject.subjectNameEn || subject.subjectNameAr
+
+    const getUnitName = (unit: TeacherSubjectUnit) =>
+        (locale === "ar" ? unit.unitNameAr : unit.unitNameEn) || unit.unitNameEn || unit.unitNameAr
 
     const getDocumentTypeName = (type: number | null | undefined) => {
         switch (type) {
@@ -502,6 +694,29 @@ export default function TeacherDetailPage() {
         blockTeacher({ teacherId: Number(teacherId), reason: blockReason })
         setBlockDialogOpen(false)
         setBlockReason("")
+    }
+
+    const toggleSubjectUnits = (subjectId: number) => {
+        setExpandedSubjects((prev) => {
+            const next = new Set(prev)
+            if (next.has(subjectId)) next.delete(subjectId)
+            else next.add(subjectId)
+            return next
+        })
+    }
+
+    const handleRejectSubject = (subject: TeacherSubject) => {
+        setSelectedSubject(subject)
+        setSubjectRejectionReason("")
+        setRejectSubjectDialogOpen(true)
+    }
+
+    const confirmRejectSubject = () => {
+        if (!subjectRejectionReason.trim() || !selectedSubject) return
+        rejectSubject({ teacherId: Number(teacherId), subjectId: selectedSubject.id, reason: subjectRejectionReason })
+        setRejectSubjectDialogOpen(false)
+        setSelectedSubject(null)
+        setSubjectRejectionReason("")
     }
 
     // No activate endpoint exists — activation happens automatically when the last
@@ -896,6 +1111,185 @@ export default function TeacherDetailPage() {
                             })()}
                         </CardContent>
                     </Card>
+
+                    {/* Subjects Section */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle>{t("teachers.subjects")}</CardTitle>
+                                    <CardDescription className="mt-1">
+                                        {t("teachers.subjectsSummary")}
+                                    </CardDescription>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Badge variant="secondary">
+                                        {teacher?.subjectSummary?.totalSubjects ?? teacher?.subjects?.length ?? 0} {t("teachers.totalSubjects")}
+                                    </Badge>
+                                </div>
+                            </div>
+                            {/* Subject stats — counts come from subjectSummary, no client tally needed. */}
+                            <div className="flex flex-wrap gap-3 mt-4">
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/10 text-success text-sm">
+                                    <IconCheck className="h-4 w-4" />
+                                    <span>{teacher?.subjectSummary?.activeSubjects ?? 0} {t("teachers.activeSubjects")}</span>
+                                </div>
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-sm">
+                                    <IconCircleMinus className="h-4 w-4" />
+                                    <span>{teacher?.subjectSummary?.inactiveSubjects ?? 0} {t("teachers.inactiveSubjects")}</span>
+                                </div>
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-sm">
+                                    <IconX className="h-4 w-4" />
+                                    <span>{teacher?.subjectSummary?.rejectedSubjects ?? 0} {t("teachers.rejectedSubjects")}</span>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {!teacher?.subjects || teacher.subjects.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-center">
+                                    <IconBook className="h-12 w-12 text-muted-foreground mb-4" />
+                                    <p className="text-muted-foreground">{t("teachers.noSubjects")}</p>
+                                </div>
+                            ) : (
+                                teacher.subjects.map((subject) => {
+                                    const isRejected = subject.verificationStatus === 3
+                                    const isQuran = subject.domainCode === "quran"
+                                    const expanded = expandedSubjects.has(subject.id)
+                                    const scopeLabel = subject.canTeachFullSubject
+                                        ? t("teachers.fullSubject")
+                                        : `${subject.units.length} ${t("teachers.units")}`
+                                    return (
+                                        <Card key={subject.id} className="border-border">
+                                            <CardContent className="p-4">
+                                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                                    <div className="flex items-start gap-4 min-w-0">
+                                                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted shrink-0">
+                                                            <IconBook className="h-6 w-6 text-muted-foreground" />
+                                                        </div>
+                                                        <div className="space-y-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h4 className="font-medium">{getSubjectName(subject)}</h4>
+                                                                {getSubjectStatusBadge(subject)}
+                                                            </div>
+                                                            <p className="text-sm text-muted-foreground">{scopeLabel}</p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                <span className="font-medium">{t("common.createdAt")}:</span>{" "}
+                                                                {new Date(subject.createdAt).toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US")}
+                                                            </p>
+                                                            {isRejected && (
+                                                                <div className="space-y-1 mt-2">
+                                                                    {subject.reviewedAt && (
+                                                                        <p className="text-xs text-muted-foreground">
+                                                                            <span className="font-medium">{t("teachers.reviewedAt")}:</span>{" "}
+                                                                            {new Date(subject.reviewedAt).toLocaleDateString(locale === "ar" ? "ar-SA" : "en-US")}
+                                                                        </p>
+                                                                    )}
+                                                                    {subject.rejectionReason && (
+                                                                        <div className="flex items-start gap-1 text-destructive">
+                                                                            <IconAlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                                                                            <p className="text-sm">
+                                                                                <span className="font-medium">{t("teachers.rejectionReason")}:</span>{" "}
+                                                                                {subject.rejectionReason}
+                                                                            </p>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Expandable units list */}
+                                                            {subject.units.length > 0 && (
+                                                                <div className="mt-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => toggleSubjectUnits(subject.id)}
+                                                                        className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                                                                    >
+                                                                        {expanded ? <IconChevronUp className="h-4 w-4" /> : <IconChevronDown className="h-4 w-4" />}
+                                                                        {expanded ? t("teachers.hideUnits") : t("teachers.showUnits")}
+                                                                    </button>
+                                                                    {expanded && (
+                                                                        <div className="mt-2 space-y-2">
+                                                                            {subject.units.map((unit) => (
+                                                                                <div key={unit.id} className="rounded-lg border border-border p-2.5">
+                                                                                    <p className="text-sm font-medium">{getUnitName(unit)}</p>
+                                                                                    {isQuran && (unit.quranContentTypeId || unit.quranLevelId) && (
+                                                                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                                                            {unit.quranContentTypeId && (
+                                                                                                <Badge variant="secondary" className="font-normal">
+                                                                                                    {(locale === "ar" ? unit.quranContentTypeNameAr : unit.quranContentTypeNameEn) || ""}
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                            {unit.quranLevelId && (
+                                                                                                <Badge variant="secondary" className="font-normal">
+                                                                                                    {(locale === "ar" ? unit.quranLevelNameAr : unit.quranLevelNameEn) || ""}
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Actions — Rejected rows show only Restore (Activate would 400). */}
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {isRejected ? (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="text-success border-success hover:bg-success/10 bg-transparent"
+                                                                onClick={() => restoreSubject({ teacherId: Number(teacherId), subjectId: subject.id })}
+                                                            >
+                                                                <IconArrowBackUp className="h-4 w-4 me-2" />
+                                                                {t("teachers.restoreSubject")}
+                                                            </Button>
+                                                        ) : (
+                                                            <>
+                                                                {subject.isActive ? (
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="text-muted-foreground hover:bg-muted bg-transparent"
+                                                                        onClick={() => inactivateSubject({ teacherId: Number(teacherId), subjectId: subject.id })}
+                                                                    >
+                                                                        <IconCircleMinus className="h-4 w-4 me-2" />
+                                                                        {t("teachers.inactivateSubject")}
+                                                                    </Button>
+                                                                ) : (
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="text-success border-success hover:bg-success/10 bg-transparent"
+                                                                        onClick={() => activateSubject({ teacherId: Number(teacherId), subjectId: subject.id })}
+                                                                    >
+                                                                        <IconCheck className="h-4 w-4 me-2" />
+                                                                        {t("teachers.activateSubject")}
+                                                                    </Button>
+                                                                )}
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="text-destructive border-destructive hover:bg-destructive/10 bg-transparent"
+                                                                    onClick={() => handleRejectSubject(subject)}
+                                                                >
+                                                                    <IconX className="h-4 w-4 me-2" />
+                                                                    {t("teachers.rejectSubject")}
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    )
+                                })
+                            )}
+                        </CardContent>
+                    </Card>
                     </div>
                 </div>
             </div>
@@ -996,6 +1390,58 @@ export default function TeacherDetailPage() {
                             disabled={!rejectionReason.trim()}
                         >
                             {t("teachers.rejectDocument")}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Reject Subject Dialog */}
+            <Dialog
+                open={rejectSubjectDialogOpen}
+                onOpenChange={(open) => {
+                    setRejectSubjectDialogOpen(open)
+                    if (!open) {
+                        setSelectedSubject(null)
+                        setSubjectRejectionReason("")
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{t("teachers.rejectSubject")}</DialogTitle>
+                        <DialogDescription>
+                            {t("teachers.confirmRejectSubject")}
+                            {selectedSubject && (
+                                <span className="block mt-2 font-medium text-foreground">
+                                    {getSubjectName(selectedSubject)}
+                                </span>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="subjectRejectionReason">{t("teachers.rejectionReason")}</Label>
+                            <Textarea
+                                id="subjectRejectionReason"
+                                placeholder={t("teachers.enterRejectionReason")}
+                                value={subjectRejectionReason}
+                                onChange={(e) => setSubjectRejectionReason(e.target.value)}
+                                rows={4}
+                                maxLength={500}
+                            />
+                            <p className="text-xs text-muted-foreground text-end">{subjectRejectionReason.length}/500</p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setRejectSubjectDialogOpen(false)}>
+                            {t("common.cancel")}
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={confirmRejectSubject}
+                            disabled={!subjectRejectionReason.trim()}
+                        >
+                            {t("teachers.rejectSubject")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -247,6 +247,29 @@ const translations: Record<Locale, Record<string, string>> = {
         "teachers.noDocuments": "No documents uploaded",
         "teachers.documentSummary": "Document Summary",
 
+        // Teacher teaching subjects
+        "teachers.subjects": "Subjects",
+        "teachers.subjectsSummary": "Teaching subjects the teacher offers",
+        "teachers.totalSubjects": "Total",
+        "teachers.activeSubjects": "Active",
+        "teachers.inactiveSubjects": "Inactive",
+        "teachers.rejectedSubjects": "Rejected",
+        "teachers.noSubjects": "No subjects added",
+        "teachers.fullSubject": "Full subject",
+        "teachers.units": "units",
+        "teachers.showUnits": "Show units",
+        "teachers.hideUnits": "Hide units",
+        "teachers.inactivateSubject": "Inactivate",
+        "teachers.activateSubject": "Activate",
+        "teachers.rejectSubject": "Reject",
+        "teachers.restoreSubject": "Restore",
+        "teachers.confirmRejectSubject": "Are you sure you want to reject this subject? Provide a reason for the teacher.",
+        "teachers.subjectInactivatedSuccess": "Subject inactivated successfully.",
+        "teachers.subjectActivatedSuccess": "Subject activated successfully.",
+        "teachers.subjectRejectedSuccess": "Subject rejected successfully.",
+        "teachers.subjectRestoredSuccess": "Subject restored successfully.",
+        "teachers.subjectActionError": "Action failed. Please try again.",
+
         // Teacher registration requirements (catalog + checklist)
         "treq.title": "Registration Requirements",
         "treq.subtitle": "Control the fields teachers must submit during registration",
@@ -355,6 +378,7 @@ const translations: Record<Locale, Record<string, string>> = {
     ar: {
         // Navigation
         "nav.dashboard": "لوحة التحكم",
+        "nav.hierarchyManager": "إدارة الهيكل التعليمي",
         "nav.domains": "النطاقات التعليمية",
         "nav.curriculums": "المناهج",
         "nav.levels": "المراحل التعليمية",
@@ -584,6 +608,29 @@ const translations: Record<Locale, Record<string, string>> = {
         "teachers.viewDocument": "عرض الوثيقة",
         "teachers.noDocuments": "لم يتم رفع وثائق",
         "teachers.documentSummary": "ملخص الوثائق",
+
+        // Teacher teaching subjects
+        "teachers.subjects": "المواد",
+        "teachers.subjectsSummary": "المواد التي يقدّمها المعلّم للتدريس",
+        "teachers.totalSubjects": "الإجمالي",
+        "teachers.activeSubjects": "مفعّلة",
+        "teachers.inactiveSubjects": "غير مفعّلة",
+        "teachers.rejectedSubjects": "مرفوضة",
+        "teachers.noSubjects": "لم تتم إضافة مواد",
+        "teachers.fullSubject": "المادة كاملة",
+        "teachers.units": "وحدات",
+        "teachers.showUnits": "عرض الوحدات",
+        "teachers.hideUnits": "إخفاء الوحدات",
+        "teachers.inactivateSubject": "إلغاء التفعيل",
+        "teachers.activateSubject": "تفعيل",
+        "teachers.rejectSubject": "رفض",
+        "teachers.restoreSubject": "استعادة",
+        "teachers.confirmRejectSubject": "هل أنت متأكد من رفض هذه المادة؟ يرجى ذكر سبب للمعلّم.",
+        "teachers.subjectInactivatedSuccess": "تم إلغاء تفعيل المادة بنجاح.",
+        "teachers.subjectActivatedSuccess": "تم تفعيل المادة بنجاح.",
+        "teachers.subjectRejectedSuccess": "تم رفض المادة بنجاح.",
+        "teachers.subjectRestoredSuccess": "تم استعادة المادة بنجاح.",
+        "teachers.subjectActionError": "فشل تنفيذ الإجراء. يرجى المحاولة مرة أخرى.",
 
         // Teacher registration requirements (catalog + checklist)
         "treq.title": "متطلبات التسجيل",

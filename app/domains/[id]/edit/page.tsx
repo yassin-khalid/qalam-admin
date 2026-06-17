@@ -6,19 +6,7 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { EntityForm } from "@/components/admin/entity-form"
 import { domainCollection } from "@/collections/domain"
 import { eq, useLiveQuery } from "@tanstack/react-db"
-import { curriculumCollection } from "@/collections/curriculums"
 import { useLocale } from "@/lib/locale-context"
-
-// Mock data - in real app, this would come from API
-const mockDomain = {
-    id: "1",
-    name: "Science & Technology",
-    nameAr: "العلوم والتكنولوجيا",
-    description: "All science and technology related subjects",
-    descriptionAr: "جميع المواضيع المتعلقة بالعلوم والتكنولوجيا",
-    active: true,
-    order: 1,
-}
 
 const domainFields = [
     {
@@ -81,15 +69,15 @@ export default function EditDomainPage() {
     const params = useParams<{ id: string }>()
     const { locale } = useLocale()
 
-    const handleSubmit = async (data: Record<string, any>) => {
+    const handleSubmit = async (data: Record<string, unknown>) => {
         const transaction = domainCollection.update(
             parseInt(params.id),
             draft => {
-                draft.nameEn = data.nameEn
-                draft.descriptionEn = data.descriptionEn
-                draft.nameAr = data.nameAr
-                draft.descriptionAr = data.descriptionAr
-                draft.code = data.code
+                draft.nameEn = data.nameEn as string
+                draft.descriptionEn = data.descriptionEn as string
+                draft.nameAr = data.nameAr as string
+                draft.descriptionAr = data.descriptionAr as string
+                draft.code = data.code as string
             }
         )
         const persisted = await transaction.isPersisted.promise

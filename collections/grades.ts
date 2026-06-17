@@ -26,11 +26,29 @@ export const gradeCollection = createCollection(queryCollectionOptions({
         if (!response.ok) {
             throw new Error('Failed to fetch grades')
         }
-        const data: ApiResponse<PaginatedResult<EducationGradeItem>> = await response.json()
-        return data.data!.items
+        // Tolerate both a direct array and a paginated { items: [...] } envelope.
+        const data: ApiResponse<PaginatedResult<EducationGradeItem> | EducationGradeItem[]> = await response.json()
+        return Array.isArray(data.data) ? data.data : data.data?.items ?? []
     },
     queryClient,
     getKey: (item) => item.id,
+    // Grades are create + list only (no update/delete REST API — see CRUD guide §13).
+    onInsert: async ({ transaction }) => {
+        const item = transaction.mutations[0].modified
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Education/Grades`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                'Accept': 'application/json',
+                'Accept-Language': localStorage.getItem('locale') === 'en' ? 'en-US' : 'ar-EG',
+            },
+            body: JSON.stringify(item),
+        })
+        const data: ApiResponse<EducationGradeItem> = await response.json()
+        if (!response.ok) throw new Error(data.message)
+        return data.data as EducationGradeItem
+    },
 }))
 
 export const gradeWithSubjectsCount = createLiveQueryCollection({
@@ -43,7 +61,7 @@ export const gradeWithSubjectsCount = createLiveQueryCollection({
         }))
 
         const grades = q.from({ grades: gradeCollection })
-        .join({ subjectsCount: subjectsCount }, ({grades, subjectsCount}) => eq(grades.id, subjectsCount.gradeId))
+        .join({ subjectsCount: subjectsCount }, ({grades, subjectsCount}) => eq(grades.id, subjectsCount.gradeId), 'left')
         .select(({grades, subjectsCount}) => ({
             ...grades,
             subjectsCount: subjectsCount?.count ?? 0,

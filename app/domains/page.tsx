@@ -8,9 +8,9 @@ import { AdminLayout } from "@/components/admin/admin-layout"
 import { DataTable, StatusCell, ActionsCell, SortableHeader } from "@/components/admin/data-table"
 import { DeleteDialog } from "@/components/admin/delete-dialog"
 import { useLocale } from "@/lib/locale-context"
-import { count, eq, liveQueryCollectionOptions, useLiveQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { domainCollection, domainWithCurriculumsCount } from "@/collections/domain"
-import { curriculumCollection } from "@/collections/curriculums"
+import { toast } from "sonner"
 
 interface Domain {
     id: number,
@@ -23,75 +23,6 @@ interface Domain {
     curriculumsCount: number
     createdAt: string
 }
-
-const mockDomains: Domain[] = [
-    {
-        id: 1,
-        name: "Science & Technology",
-        nameAr: "العلوم والتكنولوجيا",
-        description: "All science and technology related subjects",
-        descriptionAr: "جميع المواد المتعلقة بالعلوم والتكنولوجيا",
-        active: true,
-        // order: 1,
-        curriculumsCount: 5,
-        createdAt: "2024-01-15",
-    },
-    {
-        id: 2,
-        name: "Humanities",
-        nameAr: "العلوم الإنسانية",
-        description: "Arts, history, philosophy, and social sciences",
-        descriptionAr: "الفنون والتاريخ والفلسفة والعلوم الاجتماعية",
-        active: true,
-        // order: 2,
-        curriculumsCount: 3,
-        createdAt: "2024-01-10",
-    },
-    {
-        id: 3,
-        name: "Languages",
-        nameAr: "اللغات",
-        description: "Arabic, English, and foreign languages",
-        descriptionAr: "العربية والإنجليزية واللغات الأجنبية",
-        active: true,
-        // order: 3,
-        curriculumsCount: 4,
-        createdAt: "2024-01-08",
-    },
-    {
-        id: 4,
-        name: "Mathematics",
-        nameAr: "الرياضيات",
-        description: "Pure and applied mathematics",
-        descriptionAr: "الرياضيات البحتة والتطبيقية",
-        active: true,
-        // order: 4,
-        curriculumsCount: 2,
-        createdAt: "2024-01-05",
-    },
-    {
-        id: 5,
-        name: "Physical Education",
-        nameAr: "التربية البدنية",
-        description: "Sports and physical activities",
-        descriptionAr: "الرياضة والأنشطة البدنية",
-        active: false,
-        // order: 5,
-        curriculumsCount: 1,
-        createdAt: "2024-01-03",
-    },
-    {
-        id: 6,
-        name: "Arts & Design",
-        nameAr: "الفنون والتصميم",
-        description: "Visual arts, music, and creative design",
-        descriptionAr: "الفنون البصرية والموسيقى والتصميم الإبداعي",
-        active: true,
-        // order: 6,
-        curriculumsCount: 2,
-        createdAt: "2024-01-01",
-    },
-]
 
 export default function DomainsPage() {
     const router = useRouter()
@@ -190,11 +121,15 @@ export default function DomainsPage() {
                     onEdit={() => router.push(`/domains/${row.original.id}/edit`)}
                     onDelete={() => setDeleteDialog({ open: true, domain: row.original })}
                     onToggleStatus={() => {
-                        // setDomains((prev) =>
-                        //     prev.map((d) =>
-                        //         d.id === row.original.id ? { ...d, active: !d.active } : d
-                        //     )
-                        // )
+                        // Domains have no toggle-status endpoint; flip isActive via PUT update.
+                        const tx = domainCollection.update(row.original.id, draft => {
+                            draft.isActive = !row.original.active
+                        })
+                        tx.isPersisted.promise.then(result => {
+                            if (result.state === "failed") {
+                                toast.error(result.error?.message ?? "Failed to update domain")
+                            }
+                        })
                     }}
                     isActive={row.original.active}
                 />
@@ -211,7 +146,8 @@ export default function DomainsPage() {
                     setDeleteDialog({ open: false, domain: null })
                 }
                 if (result.state === "failed") {
-                    console.error(result.error?.message)
+                    // e.g. 400 "Cannot delete domain with existing education levels"
+                    toast.error(result.error?.message ?? "Failed to delete domain")
                 }
             })
         }
