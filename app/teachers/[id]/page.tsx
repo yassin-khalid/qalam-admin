@@ -78,6 +78,7 @@ export default function TeacherDetailPage() {
     const teacherId = params.id
 
     const [blockDialogOpen, setBlockDialogOpen] = React.useState(false)
+    const [activateDialogOpen, setActivateDialogOpen] = React.useState(false)
     const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
     const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
     const [selectedDocument, setSelectedDocument] = React.useState<TeacherDetail['documents'][number] | null>(null)
@@ -143,6 +144,7 @@ export default function TeacherDetailPage() {
         subjects?: TeacherSubject[]
         subjectSummary?: {
             totalSubjects: number
+            pendingSubjects: number
             activeSubjects: number
             inactiveSubjects: number
             rejectedSubjects: number
@@ -372,7 +374,7 @@ export default function TeacherDetailPage() {
     }
 
     const subjectCommand = (
-        action: "Inactivate" | "Activate" | "Reject" | "Restore",
+        action: "Approve" | "Inactivate" | "Activate" | "Reject" | "Restore",
         body?: Record<string, unknown>,
     ) => async ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) => {
         const access_token = localStorage.getItem('access_token');
@@ -393,6 +395,26 @@ export default function TeacherDetailPage() {
         }
         return typeof data.data === "string" ? data.data : data.message;
     }
+
+    // v2: new subjects arrive Pending; admin approves after comparing them to the
+    // teacher's certificate documents. Approve flips verificationStatus -> Approved (2)
+    // and keeps the row active.
+    const { mutate: approveSubject } = useMutation({
+        mutationFn: ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) =>
+            subjectCommand("Approve")({ teacherId, subjectId }),
+        onMutate: async ({ subjectId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            patchSubjectInCache(subjectId, { isActive: true, verificationStatus: 2, rejectionReason: null })
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.subjectApprovedSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.subjectActionError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
 
     const { mutate: inactivateSubject } = useMutation({
         mutationFn: ({ teacherId, subjectId }: { teacherId: number, subjectId: number }) =>
@@ -462,21 +484,42 @@ export default function TeacherDetailPage() {
         },
     })
 
-    // Activation is automatic on the backend: approving the last required document
-    // flips the teacher to Active (see Teacher-Registration-Guide, Step C). Surface
-    // that transition with a one-time toast so the admin sees it happen.
-    const prevStatusRef = React.useRef<number | undefined>(undefined)
-    React.useEffect(() => {
-        const current = teacher?.status
-        if (
-            prevStatusRef.current !== undefined &&
-            prevStatusRef.current !== TEACHER_STATUS.Active &&
-            current === TEACHER_STATUS.Active
-        ) {
-            toast.success(t("teachers.teacherActivatedSuccess"))
-        }
-        prevStatusRef.current = current
-    }, [teacher?.status, t])
+    // v2: activation is an explicit admin action — POST .../Activate — allowed only
+    // when canBeActivated is true (all required docs + all subjects approved, >=1 subject).
+    const { mutate: activateTeacher } = useMutation({
+        mutationFn: async ({ teacherId }: { teacherId: number }) => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/${teacherId}/Activate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${access_token}`,
+                    'Accept': 'application/json',
+                    'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+                },
+            });
+            const data = await response.json() as ApiResponse<string | null>
+            if (!data.succeeded) {
+                throw new Error(data.message);
+            }
+            return typeof data.data === "string" ? data.data : data.message;
+        },
+        onMutate: async ({ teacherId }) => {
+            await queryClient.cancelQueries({ queryKey: ['teacher', teacherId] })
+            queryClient.setQueryData<TeacherDetail | null>(['teacher', teacherId], (old) =>
+                old ? { ...old, status: TEACHER_STATUS.Active } : old
+            )
+        },
+        onSuccess: (message) => {
+            toast.success(message || t("teachers.teacherActivatedSuccess"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || t("teachers.teacherActivateError"))
+            queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
+        },
+    })
 
     const BackArrow = direction === "rtl" ? IconArrowRight : IconArrowLeft
 
@@ -545,14 +588,22 @@ export default function TeacherDetailPage() {
         }
     }
 
-    // Subject status derives from BOTH fields: Rejected (3) wins, then inactive,
-    // else active — matches the admin subjects guide status-pill logic.
+    // Subject status derives from BOTH fields: Rejected (3) wins, then Pending (1),
+    // then inactive, else active — matches the admin subjects guide status-pill logic.
     const getSubjectStatusBadge = (subject: TeacherSubject) => {
         if (subject.verificationStatus === 3) {
             return (
                 <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">
                     <IconX className="h-3 w-3 me-1" />
                     {t("teachers.rejected")}
+                </Badge>
+            )
+        }
+        if (subject.verificationStatus === 1) {
+            return (
+                <Badge variant="outline" className="border-warning text-warning bg-warning/10">
+                    <IconClock className="h-3 w-3 me-1" />
+                    {t("teachers.pending")}
                 </Badge>
             )
         }
@@ -719,12 +770,9 @@ export default function TeacherDetailPage() {
         setSubjectRejectionReason("")
     }
 
-    // No activate endpoint exists — activation happens automatically when the last
-    // required document is approved. This affordance just confirms by re-fetching
-    // the latest status from the server.
     const confirmActivation = () => {
-        queryClient.invalidateQueries({ queryKey: ['teacher', teacherId] })
-        toast.info(t("teachers.activationAutomaticHint"))
+        activateTeacher({ teacherId: Number(teacherId) })
+        setActivateDialogOpen(false)
     }
 
     return (
@@ -1093,12 +1141,12 @@ export default function TeacherDetailPage() {
                                                         <p className="text-sm text-muted-foreground">{description}</p>
                                                     </div>
                                                 </div>
-                                                {/* Activation is automatic — this button just confirms by re-fetching status. */}
+                                                {/* v2: explicit admin authorize — POST .../Activate (only when canBeActivated). */}
                                                 {canActivate && !isActive && (
                                                     <Button
                                                         size="sm"
                                                         className="bg-success text-success-foreground hover:bg-success/90 shrink-0"
-                                                        onClick={confirmActivation}
+                                                        onClick={() => setActivateDialogOpen(true)}
                                                     >
                                                         <IconCheck className="h-4 w-4 me-2" />
                                                         {t("teachers.activateTeacher")}
@@ -1130,6 +1178,10 @@ export default function TeacherDetailPage() {
                             </div>
                             {/* Subject stats — counts come from subjectSummary, no client tally needed. */}
                             <div className="flex flex-wrap gap-3 mt-4">
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-warning/10 text-warning text-sm">
+                                    <IconClock className="h-4 w-4" />
+                                    <span>{teacher?.subjectSummary?.pendingSubjects ?? 0} {t("teachers.pendingSubjects")}</span>
+                                </div>
                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/10 text-success text-sm">
                                     <IconCheck className="h-4 w-4" />
                                     <span>{teacher?.subjectSummary?.activeSubjects ?? 0} {t("teachers.activeSubjects")}</span>
@@ -1153,6 +1205,7 @@ export default function TeacherDetailPage() {
                             ) : (
                                 teacher.subjects.map((subject) => {
                                     const isRejected = subject.verificationStatus === 3
+                                    const isPending = subject.verificationStatus === 1
                                     const isQuran = subject.domainCode === "quran"
                                     const expanded = expandedSubjects.has(subject.id)
                                     const scopeLabel = subject.canTeachFullSubject
@@ -1235,7 +1288,8 @@ export default function TeacherDetailPage() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Actions — Rejected rows show only Restore (Activate would 400). */}
+                                                    {/* Actions — Rejected: Restore only (Activate would 400). Pending:
+                                                        Approve / Reject. Approved: Inactivate|Activate + Reject. */}
                                                     <div className="flex items-center gap-2 shrink-0">
                                                         {isRejected ? (
                                                             <Button
@@ -1247,6 +1301,27 @@ export default function TeacherDetailPage() {
                                                                 <IconArrowBackUp className="h-4 w-4 me-2" />
                                                                 {t("teachers.restoreSubject")}
                                                             </Button>
+                                                        ) : isPending ? (
+                                                            <>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="text-success border-success hover:bg-success/10 bg-transparent"
+                                                                    onClick={() => approveSubject({ teacherId: Number(teacherId), subjectId: subject.id })}
+                                                                >
+                                                                    <IconCheck className="h-4 w-4 me-2" />
+                                                                    {t("teachers.approveSubject")}
+                                                                </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="text-destructive border-destructive hover:bg-destructive/10 bg-transparent"
+                                                                    onClick={() => handleRejectSubject(subject)}
+                                                                >
+                                                                    <IconX className="h-4 w-4 me-2" />
+                                                                    {t("teachers.rejectSubject")}
+                                                                </Button>
+                                                            </>
                                                         ) : (
                                                             <>
                                                                 {subject.isActive ? (
@@ -1331,6 +1406,30 @@ export default function TeacherDetailPage() {
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                             {t("teachers.blockTeacher")}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Activate Account Dialog */}
+            <AlertDialog open={activateDialogOpen} onOpenChange={setActivateDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{t("teachers.activateTeacher")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {t("teachers.confirmActivateTeacher")}
+                            <span className="block mt-2 font-medium text-foreground">
+                                {teacher?.fullName} ({teacher?.email || ""})
+                            </span>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmActivation}
+                            className="bg-success text-success-foreground hover:bg-success/90"
+                        >
+                            {t("teachers.activateTeacher")}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

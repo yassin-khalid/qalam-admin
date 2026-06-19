@@ -206,6 +206,8 @@ import {
     IconLogout,
     IconUser,
     IconUsers,
+    IconUserCheck,
+    IconBooks,
     IconHierarchy,
     IconClipboardList
 } from "@tabler/icons-react"
@@ -284,6 +286,16 @@ const navigationItems = [
         titleKey: "nav.teachers",
         icon: IconUsers,
         href: "/teachers",
+    },
+    {
+        titleKey: "nav.pendingTeachers",
+        icon: IconUserCheck,
+        href: "/teachers/pending",
+    },
+    {
+        titleKey: "nav.teacherSubjects",
+        icon: IconBooks,
+        href: "/teacher-subjects",
     },
     {
         titleKey: "nav.teacherRequirements",

@@ -99,6 +99,50 @@ export const teacherColllection = createCollection(queryCollectionOptions(
     }
 ))
 
+// Verification queue (Endpoint #2): teachers in PendingVerification or
+// DocumentsRejected. Same row shape as the all-teachers list, separate query key
+// so it can live alongside the main list without cache collisions.
+export const pendingTeacherCollection = createCollection(queryCollectionOptions(
+    {
+        queryKey: ['teachers', 'pending'],
+        queryFn: async () => {
+            const access_token = localStorage.getItem('access_token');
+            const locale = localStorage.getItem('locale');
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${access_token}`,
+                'Accept': 'application/json',
+                'Accept-Language': locale === 'ar' ? 'ar-EG' : 'en-US',
+            };
+
+            const rows: RawTeacherListItem[] = [];
+            let pageNumber = 1;
+            for (;;) {
+                const response = await fetch(
+                    `${process.env.NEXT_PUBLIC_API_URL}/Api/V1/Admin/TeacherManagement/Pending?pageNumber=${pageNumber}&pageSize=${MAX_PAGE_SIZE}`,
+                    { method: 'GET', headers },
+                );
+                const data = await response.json() as ApiResponse<RawTeacherListItem[]>
+                if (!data.succeeded) {
+                    throw new Error(data.message);
+                }
+                rows.push(...(data.data ?? []));
+                if (!data.meta?.hasNextPage) break;
+                pageNumber += 1;
+            }
+
+            return rows.map((teacher) => ({
+                ...teacher,
+                status: normalizeTeacherStatus(teacher.status),
+                location: normalizeLocation(teacher.location),
+            }));
+        },
+        queryClient,
+        getKey: (item) => item.teacherId,
+    }
+))
+
 // export const approveDocument = createOptimisticAction<{teacherId: number, documentId: number}>({
 //     onMutate: ({teacherId, documentId}) => {
 //         const collection = teacherDocumentsCollection(teacherId);
